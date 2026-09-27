@@ -1,0 +1,95 @@
+# ---------------------------------------------------------------------------
+# OBD Platform - root .gitignore
+# ---------------------------------------------------------------------------
+
+# --- OS noise ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Logs & JVM crash dumps ---
+*.log
+logs/
+hs_err_pid*.log
+replay_pid*.log
+hs_err*.hprof
+
+# --- Build output ---
+target/
+build/
+out/
+bin/
+*.class
+*.jar
+*.war
+.gradle/
+.mvn/wrapper/maven-wrapper.jar
+.mvn/timeline.properties
+.flattened-pom.xml
+
+# --- Dependencies ---
+node_modules/
+.pnpm-store/
+.yarn/
+.pnp.*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# --- Test / coverage output ---
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+test-results/
+playwright-report/
+
+# --- Next.js ---
+.next/
+/.vercel
+
+# --- Local environment / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+keystore/
+
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/*
+!.vscode/settings.json
+nbproject/private/
+nbproject/private/
+.build/
+nbdist/
+.nb-gradle/
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+.apt_generated
+.history/
+
+# --- Caches ---
+.cache/
+tmp/
+temp/
+*.tsbuildinfo
+.vscode-test/
+.eslintcache
+
+# --- Editor swap/backup files ---
+*~
+*.orig
+*.rej
+*.bak

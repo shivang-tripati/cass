@@ -1,0 +1,35 @@
+rules:
+  - Always reference .ai/context/ for project context
+  - Follow patterns in .ai/skills/ for module development
+  - Use prompts from .ai/prompts/ for specific tasks
+  - Check .ai/workflows/ for process guidance
+  
+context_files:
+  - .ai/context/project-context.md
+  - .ai/context/architecture.md
+  - .ai/context/tech-stack.md
+  - .ai/context/development-rules.md
+
+skills:
+  - .ai/skills/backend-skill.md
+  - .ai/skills/frontend-skill.md
+  - .ai/skills/telephony-skill.md
+  - .ai/skills/reporting-skill.md
+  - .ai/skills/infrastructure-skill.md
+
+prompts:
+  - .ai/prompts/feature-implementation.md
+  - .ai/prompts/bug-fix.md
+  - .ai/prompts/code-review.md
+  - .ai/prompts/test-generation.md
+  - .ai/prompts/documentation.md
+
+workflows:
+  - .ai/workflows/new-feature.md
+  - .ai/workflows/deployment.md
+  - .ai/workflows/troubleshooting.md
+
+auto_read:
+  - README.md
+  - .ai/context/project-context.md
+  - .ai/context/architecture.md

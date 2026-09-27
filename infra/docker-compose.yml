@@ -1,0 +1,82 @@
+services:
+  obd-postgres:
+    container_name: obd-postgres
+    image: postgres:16-alpine
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - obd-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  obd-redis:
+    container_name: obd-redis
+    image: redis:8-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - obd-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  obd-rustfs:
+    container_name: obd-rustfs
+    image: rustfs/rustfs:latest
+    command: /data 
+    env_file:
+      - .env
+    environment:
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "${RUSTFS_API_PORT}:9000"
+      - "${RUSTFS_CONSOLE_PORT}:9001"
+    volumes:
+      - rustfs_data:/data
+    networks:
+      - obd-network
+    restart: unless-stopped
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9000/health || exit 1"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+    #   start_period: 10s
+
+networks:
+  obd-network:
+    name: obd-network
+
+volumes:
+  postgres_data:
+    name: postgres_data
+  redis_data:
+    name: redis_data
+  rustfs_data:
+    name: rustfs_data
