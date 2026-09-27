@@ -1,5 +1,6 @@
 package com.shivang.obd.campaign;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -37,14 +38,22 @@ import org.springframework.stereotype.Service;
  * ({@code (tenant_id, contact_id, did_id, usage_date)}); PostgreSQL row
  * locking makes over-admission impossible without any distributed
  * coordination. The effective limit is {@code min(campaignDailyLimit, 3)}
- * where 3 is the platform maximum; no campaign limit is configurable in
- * this phase (VB-6C.2), so the platform max always applies.</p>
+ * where 3 is the platform maximum; since VB-6C.2 the caller supplies the
+ * campaign's configured value from the execution's immutable snapshot, so
+ * {@code null} (not configured) resolves to the platform maximum of 3 and
+ * the live campaign is never consulted here.</p>
  *
  * <p><b>Timezone.</b> The usage day is computed in the execution
  * snapshot's IANA timezone — the authoritative zone of the Voice Blast
  * schedule. A null/blank/invalid zone fails the dial deterministically
  * (see {@link ExecutionTimezoneInvalidException}); there is deliberately
  * no JVM/UTC fallback (audit §2).</p>
+ *
+ * <p><b>Observability (VB-6C.3).</b> Three Micrometer signals on the
+ * project's existing {@code obd.*} convention, carrying bounded labels
+ * only — see the constants below. No reconciler, sweeper, or scheduled job
+ * exists for this ledger by design: a stranded hold is surfaced, not
+ * silently repaired.</p>
  */
 @Service
 @Slf4j
@@ -61,15 +70,37 @@ public class DailyDialLimitService {
      */
     public static final int MAX_VOICE_BLAST_DAILY_DIAL_LIMIT = PLATFORM_DAILY_DIAL_LIMIT;
 
+    // === VB-6C.3 operational signals ===
+    // Follow the established project convention (see
+    // SuspiciousActivityDetector / SecurityMaintenanceService): dotted
+    // "obd.<domain>.<signal>" names, MeterRegistry counters, and a bounded
+    // enum-like tag only. No tenant/campaign/contact/DID/provider-call-id
+    // labels: those are unbounded (and DID/phone are customer data).
+    // Identifiers stay in the log lines, never in metric tags.
+
+    /** Counter: dial attempts refused because the daily limit was exhausted. */
+    static final String METRIC_DAILY_LIMIT_REACHED =
+            "obd.campaign.voiceblast.dailylimit.reached";
+
+    /** Counter: dials refused because the execution snapshot timezone was unusable. */
+    static final String METRIC_TIMEZONE_INVALID =
+            "obd.campaign.voiceblast.execution.timezone.invalid";
+
+    /** Gauge: buckets currently holding an un-released reservation (normally 0). */
+    static final String METRIC_RESERVED_BUCKETS =
+            "obd.campaign.voiceblast.dailylimit.reserved.buckets";
+
     private final VoiceBlastDailyUsageRepository usageRepository;
     private final VoiceBlastDailyUsageEntryRepository entryRepository;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
 
     /** Production constructor: UTC-pinned clock — the snapshot zone supplies the day. */
     @org.springframework.beans.factory.annotation.Autowired
     public DailyDialLimitService(VoiceBlastDailyUsageRepository usageRepository,
-                                 VoiceBlastDailyUsageEntryRepository entryRepository) {
-        this(usageRepository, entryRepository, Clock.systemUTC());
+                                 VoiceBlastDailyUsageEntryRepository entryRepository,
+                                 MeterRegistry meterRegistry) {
+        this(usageRepository, entryRepository, meterRegistry, Clock.systemUTC());
     }
 
     /**
@@ -79,10 +110,21 @@ public class DailyDialLimitService {
      */
     public DailyDialLimitService(VoiceBlastDailyUsageRepository usageRepository,
                                  VoiceBlastDailyUsageEntryRepository entryRepository,
+                                 MeterRegistry meterRegistry,
                                  Clock clock) {
         this.usageRepository = usageRepository;
         this.entryRepository = entryRepository;
+        this.meterRegistry = meterRegistry;
         this.clock = clock;
+        // Ledger-visibility gauge: a stranded hold (process death between
+        // reserve and release/confirm) is the one condition the design
+        // cannot self-heal. Exposed as a plain diagnostic read — this phase
+        // deliberately adds NO sweeper, scheduler, or reconciliation worker.
+        io.micrometer.core.instrument.Gauge
+                .builder(METRIC_RESERVED_BUCKETS, usageRepository,
+                        repo -> repo.countBucketsWithReservations())
+                .description("Daily-limit buckets holding an un-released reservation")
+                .register(meterRegistry);
     }
 
     // === policy helpers ===
@@ -135,6 +177,7 @@ public class DailyDialLimitService {
      */
     public LocalDate resolveUsageDate(String snapshotTimezone) {
         if (snapshotTimezone == null || snapshotTimezone.isBlank()) {
+            countTimezoneInvalid();
             throw new ExecutionTimezoneInvalidException(
                     "Voice Blast execution snapshot has no timezone; daily dial limit "
                             + "cannot determine the usage day. Configure the campaign "
@@ -144,6 +187,7 @@ public class DailyDialLimitService {
             ZoneId zone = ZoneId.of(snapshotTimezone.trim());
             return LocalDate.now(clock.withZone(zone));
         } catch (Exception invalidZone) {
+            countTimezoneInvalid();
             throw new ExecutionTimezoneInvalidException(
                     "Voice Blast execution snapshot timezone '" + snapshotTimezone
                             + "' is not a valid IANA identifier; daily dial limit "
@@ -177,10 +221,34 @@ public class DailyDialLimitService {
         if (reserved == 1) {
             return AdmissionResult.ADMITTED;
         }
+        // The one log for this decision lives here, at the policy boundary:
+        // it is the only place that knows the effective limit and the bucket
+        // identity. The dial path deliberately does NOT log the same event
+        // again (VB-6C.3 §6 — no duplicate logs).
         log.info("Daily dial limit reached for tenant={} contact={} did={} date={} "
                         + "(effectiveLimit={})",
                 tenantId, contactId, actualOutboundDidId, usageDate, effectiveLimit);
+        // Bounded tag only (1..3): lets an operator see WHICH limit is
+        // binding without any unbounded label (no tenant/contact/DID).
+        io.micrometer.core.instrument.Counter
+                .builder(METRIC_DAILY_LIMIT_REACHED)
+                .tag("effectiveLimit", String.valueOf(effectiveLimit))
+                .register(meterRegistry)
+                .increment();
         return AdmissionResult.DAILY_LIMIT_REACHED;
+    }
+
+    /**
+     * Counts one unusable execution-snapshot timezone. The offending value
+     * is deliberately NOT a metric tag (unbounded); it appears only in the
+     * dial path's existing {@code log.error}, which already names the
+     * attempt and execution.
+     */
+    private void countTimezoneInvalid() {
+        io.micrometer.core.instrument.Counter
+                .builder(METRIC_TIMEZONE_INVALID)
+                .register(meterRegistry)
+                .increment();
     }
 
     /**

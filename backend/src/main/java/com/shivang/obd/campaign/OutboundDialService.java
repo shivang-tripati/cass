@@ -258,8 +258,9 @@ public class OutboundDialService {
                     attempt.getTenantId(), attempt.getContactId(), actualOutboundDidId,
                     usageDate, dailyDialLimitService.effectiveLimit(campaign.dailyDialLimit()));
             if (admission != DailyDialLimitService.AdmissionResult.ADMITTED) {
-                log.info("Call attempt {} rejected by daily dial limit (contact={}, did={})",
-                        attemptId, attempt.getContactId(), actualOutboundDidId);
+                // No log here: DailyDialLimitService already logs this exact
+                // decision once, at the policy boundary, with the effective
+                // limit and bucket identity (VB-6C.3 §6 — no duplicate logs).
                 markFailed(attempt, CallFailureCode.DAILY_LIMIT_REACHED.name(),
                         "Voice Blast daily dial limit reached for this contact and DID today");
                 attemptRepository.save(attempt);

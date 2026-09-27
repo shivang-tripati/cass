@@ -189,7 +189,8 @@ class CampaignDailyDialLimitServiceTest {
         void effectiveLimitSemantics() {
             DailyDialLimitService limitService = new DailyDialLimitService(
                     org.mockito.Mockito.mock(VoiceBlastDailyUsageRepository.class),
-                    org.mockito.Mockito.mock(VoiceBlastDailyUsageEntryRepository.class));
+                    org.mockito.Mockito.mock(VoiceBlastDailyUsageEntryRepository.class),
+                    new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
             assertThat(limitService.effectiveLimit(null)).isEqualTo(3);
             assertThat(limitService.effectiveLimit(1)).isEqualTo(1);
             assertThat(limitService.effectiveLimit(2)).isEqualTo(2);

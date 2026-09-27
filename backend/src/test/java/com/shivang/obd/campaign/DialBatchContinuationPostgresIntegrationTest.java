@@ -154,7 +154,8 @@ class DialBatchContinuationPostgresIntegrationTest {
         voiceCapacity = mock(com.shivang.obd.voice.capacity.VoiceCapacityService.class);
 
         dailyDialLimitService = new DailyDialLimitService(
-                dailyUsageRepository, dailyUsageEntryRepository);
+                dailyUsageRepository, dailyUsageEntryRepository,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
 
         dialService = new OutboundDialService(
                 attemptRepository, contactRepository, tenantRepository,

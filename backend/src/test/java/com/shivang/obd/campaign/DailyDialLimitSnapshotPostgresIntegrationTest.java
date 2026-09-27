@@ -43,7 +43,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -232,7 +231,15 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
         });
     }
 
-    /** Real service-stack campaign creation (create → mapper → validation → save). */
+    /**
+     * Real service-stack campaign creation (create → mapper → validation →
+     * save), then the real DRAFT → SCHEDULED transition so the campaign is
+     * actually executable. Both steps go through the genuine service stack:
+     * creation legitimately lands in DRAFT, and {@code CampaignReadiness
+     * Service} only permits SCHEDULED/RUNNING to execute, so the transition
+     * is part of the scenario rather than a shortcut around it (it also
+     * re-validates the configuration via {@code validateActivation}).
+     */
     private UUID createCampaign(UUID tenantId, Integer dailyDialLimit) {
         com.shivang.obd.authz.context.OrganizationContextHolder
             .setAuthenticated(CALLER_ID, tenantId, null);
@@ -246,7 +253,17 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
             new RetryPolicyConfig(0, null, null),
             null, null, false,
             dailyDialLimit);
-        return campaignService.create(request, null).data().id();
+        UUID campaignId = campaignService.create(request, null).data().id();
+        changeStatus(tenantId, campaignId, "SCHEDULED");
+        return campaignId;
+    }
+
+    /** The real lifecycle transition (DRAFT → SCHEDULED, SCHEDULED → DRAFT). */
+    private void changeStatus(UUID tenantId, UUID campaignId, String status) {
+        com.shivang.obd.authz.context.OrganizationContextHolder
+            .setAuthenticated(CALLER_ID, tenantId, null);
+        tx().executeWithoutResult(t -> campaignService.changeStatus(
+            campaignId, new com.shivang.obd.campaign.dto.UpdateCampaignStatusRequest(status)));
     }
 
     /** Real service-stack execution creation (readiness → snapshot → execution). */
@@ -272,7 +289,8 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
                 .findByIdAndDeletedAtIsNull(executionId).orElseThrow();
             return new DailyDialLimitService(
                 org.mockito.Mockito.mock(VoiceBlastDailyUsageRepository.class),
-                org.mockito.Mockito.mock(VoiceBlastDailyUsageEntryRepository.class))
+                org.mockito.Mockito.mock(VoiceBlastDailyUsageEntryRepository.class),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry())
                 .effectiveLimit(runtimeConfigResolver.resolve(execution).dailyDialLimit());
         });
     }
@@ -282,16 +300,41 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
             entityManager.find(CampaignEntity.class, campaignId).getDailyDialLimit());
     }
 
+    /**
+     * Changes the campaign's configured limit through the REAL update path
+     * (mapper → {@code assertEditable} → {@code assertConfigurable} → save),
+     * exactly as a PUT would. The caller must have unlocked the campaign
+     * (SCHEDULED → DRAFT) first, because VB-6A editability permits
+     * configuration changes only in DRAFT — the test deliberately exercises
+     * the real lifecycle gate instead of writing the column behind the
+     * service's back.
+     */
     private void updateCampaignLimit(UUID tenantId, UUID campaignId, Integer newLimit) {
         com.shivang.obd.authz.context.OrganizationContextHolder
             .setAuthenticated(CALLER_ID, tenantId, null);
         tx().executeWithoutResult(t -> {
-            CampaignEntity campaign = campaignRepository
+            CampaignEntity current = campaignRepository
                 .findByIdAndTenantIdAndDeletedAtIsNull(campaignId, tenantId).orElseThrow();
-            // Mirror the real PUT: mapper applies the whole config block.
-            campaign.setName(campaign.getName());
-            campaign.setDailyDialLimit(newLimit);
-            campaignRepository.save(campaign);
+            ScheduleSpec schedule = current.getSchedule();
+            RetryPolicySpec retry = current.getRetryPolicy();
+            // PUT semantics: the whole configuration block is replaced, so
+            // every field is echoed back and only the limit differs.
+            UpdateCampaignRequest request = new UpdateCampaignRequest(
+                current.getName(), current.getDescription(), current.getRunMode(),
+                current.getContactGroupId(), current.getDidId(),
+                current.getContentMode(), current.getAudioAssetId(),
+                current.getTtsTemplateId(),
+                new ScheduleConfig(
+                    schedule.getStartDate(), schedule.getEndDate(),
+                    schedule.getStartTime(), schedule.getEndTime(),
+                    schedule.getTimezone(), schedule.getAllowedDaysOfWeek(),
+                    schedule.getHolidayCalendarId()),
+                new RetryPolicyConfig(
+                    retry.getMaxAttempts(), retry.getIntervalSeconds(),
+                    retry.getStrategy()),
+                null, null,
+                newLimit);
+            campaignService.update(campaignId, request);
         });
     }
 
@@ -306,9 +349,13 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
         assertThat(snapshotLimit(e1)).isEqualTo(3);
         assertThat(effectiveLimitOf(e1)).isEqualTo(3);
 
-        // Campaign changes 3 → 1 after E1 was created.
+        // The campaign is SCHEDULED and therefore NOT editable. VB-6A unlocks
+        // it with the explicit SCHEDULED -> DRAFT transition, then the limit
+        // is changed through the real PUT path.
+        changeStatus(tenantId, campaignId, "DRAFT");
         updateCampaignLimit(tenantId, campaignId, 1);
         assertThat(campaignLimit(campaignId)).isEqualTo(1);
+        changeStatus(tenantId, campaignId, "SCHEDULED");
 
         // E1's frozen snapshot still carries 3, resolved as effective 3.
         assertThat(snapshotLimit(e1)).isEqualTo(3);
@@ -357,15 +404,34 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
         UUID campaignId = createCampaign(tenantId, 2);
 
         for (int invalid : new int[] {0, -1, 4}) {
-            assertThatThrownBy(() -> tx().executeWithoutResult(t ->
-                    entityManager.createNativeQuery(
-                        "UPDATE campaigns SET daily_dial_limit = ? WHERE id = ?")
-                        .setParameter(1, (short) invalid)
-                        .setParameter(2, campaignId)
-                        .executeUpdate()))
-                .as("daily_dial_limit=%d must violate ck_campaigns_daily_dial_limit", invalid)
-                .isInstanceOf(DataIntegrityViolationException.class);
+            assertRejectedByCheck(
+                    () -> tx().executeWithoutResult(t ->
+                            entityManager.createNativeQuery(
+                                    "UPDATE campaigns SET daily_dial_limit = ? WHERE id = ?")
+                                .setParameter(1, (short) invalid)
+                                .setParameter(2, campaignId)
+                                .executeUpdate()),
+                    "ck_campaigns_daily_dial_limit",
+                    "campaigns.daily_dial_limit=" + invalid);
         }
+
+        // The same invariant is frozen into the execution-snapshot table, so
+        // an invalid value can never enter the immutable configuration either.
+        UUID executionId = createExecution(tenantId, campaignId);
+        for (int invalid : new int[] {0, -1, 4}) {
+            assertRejectedByCheck(
+                    () -> tx().executeWithoutResult(t ->
+                            entityManager.createNativeQuery(
+                                    "UPDATE campaign_execution_configurations "
+                                            + "SET daily_dial_limit = ? "
+                                            + "WHERE campaign_id = ?")
+                                .setParameter(1, (short) invalid)
+                                .setParameter(2, campaignId)
+                                .executeUpdate()),
+                    "ck_cec_daily_dial_limit",
+                    "campaign_execution_configurations.daily_dial_limit=" + invalid);
+        }
+        assertThat(snapshotLimit(executionId)).isEqualTo(2);
 
         // Null and the valid range remain writable.
         tx().executeWithoutResult(t -> entityManager.createNativeQuery(
@@ -376,6 +442,27 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
                 "UPDATE campaigns SET daily_dial_limit = 3 WHERE id = ?")
             .setParameter(1, campaignId).executeUpdate());
         assertThat(campaignLimit(campaignId)).isEqualTo(3);
+    }
+
+    /**
+     * Asserts the database itself refused the write, and — more precisely
+     * than an exception class — that the NAMED V48 check constraint is what
+     * rejected it. A native {@code UPDATE} surfaces Hibernate's
+     * {@code ConstraintViolationException} (not Spring's
+     * {@code DataIntegrityViolationException}, which is only translated on
+     * the JPA/connection paths), so both shapes are accepted while the
+     * constraint name is asserted strictly.
+     */
+    private void assertRejectedByCheck(
+            org.assertj.core.api.ThrowableAssert.ThrowingCallable write,
+            String constraintName,
+            String description) {
+        assertThatThrownBy(write)
+                .as("%s must be rejected by %s", description, constraintName)
+                .isInstanceOfAny(
+                        org.springframework.dao.DataIntegrityViolationException.class,
+                        org.hibernate.exception.ConstraintViolationException.class)
+                .hasMessageContaining(constraintName);
     }
 
     @Test

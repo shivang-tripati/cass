@@ -155,6 +155,7 @@ class VoiceBlastDailyDialLimitPostgresIntegrationTest {
         // midnight (the suite ran across one during development).
         // 20:00Z: UTC day = 2026-09-27, Asia/Kolkata day = 2026-09-28.
         limitService = new DailyDialLimitService(usageRepository, entryRepository,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
                 java.time.Clock.fixed(java.time.Instant.parse("2026-09-27T20:00:00Z"),
                         java.time.ZoneId.of("UTC")));
         attemptSeq = 0;

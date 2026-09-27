@@ -45,7 +45,8 @@ class DailyDialLimitServiceTest {
             Clock.fixed(Instant.parse("2026-09-27T20:00:00Z"), ZoneId.of("UTC"));
 
     private DailyDialLimitService service() {
-        return new DailyDialLimitService(usageRepository, entryRepository, PINNED);
+        return new DailyDialLimitService(usageRepository, entryRepository,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), PINNED);
     }
 
     @Nested

@@ -125,7 +125,11 @@ class CampaignOpenApiContractTest {
         assertThat(createOp.at("/responses/400").isMissingNode()).isFalse();
         assertThat(updateOp.at("/responses/400").isMissingNode()).isFalse();
         // The requestBody still references the (now extended) create schema.
-        assertThat(createOp.at("/requestBody/content/application-json/schema/$ref")
+        // NOTE: the media-type segment "application/json" contains a '/', which a
+        // JSON Pointer must escape as '~1' (RFC 6901) - hence "application~1json".
+        assertThat(createOp.at("/requestBody/content/application~1json/schema/$ref")
             .asText()).contains("CreateCampaignRequest");
+        assertThat(updateOp.at("/requestBody/content/application~1json/schema/$ref")
+            .asText()).contains("UpdateCampaignRequest");
     }
 }

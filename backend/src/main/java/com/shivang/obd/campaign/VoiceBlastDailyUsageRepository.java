@@ -43,6 +43,21 @@ public interface VoiceBlastDailyUsageRepository
             UUID tenantId, UUID contactId, UUID didId, LocalDate usageDate);
 
     /**
+     * Observability only (VB-6C.3): how many buckets currently hold an
+     * un-released reservation. Normally zero — every hold is released on a
+     * pre-acceptance failure and converted on provider acceptance. A
+     * non-zero value therefore means a process died between reservation and
+     * resolution and left capacity stranded until the bucket ages out.
+     * <p>
+     * Deliberately a plain diagnostic read, not a reconciliation mechanism:
+     * nothing sweeps these rows in this phase (§7/§8 — observe first,
+     * reconcile only on evidence).
+     */
+    @Query(value = "SELECT COUNT(*) FROM voice_blast_daily_usage "
+            + "WHERE reserved_count > 0", nativeQuery = true)
+    long countBucketsWithReservations();
+
+    /**
      * Idempotent bucket-row creation: atomic INSERT that is a no-op when a
      * concurrent creator (or an earlier call) already made the row.
      * Deliberately NOT a saveAndFlush-then-catch: a unique-key violation
