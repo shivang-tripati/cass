@@ -115,7 +115,12 @@ class DtmfExecutionServiceTest {
         asset.setId(ASSET_ID);
         asset.setTenantId(TENANT_A);
         asset.setStatus(AudioAssetStatus.APPROVED);
-        asset.setStorageReference("sounds/en/prompt.wav");
+        // VB-6F: canonical logical reference, naming this asset and its owner.
+        // Pre-VB-6E this fixture used a loose "sounds/en/prompt.wav" and the
+        // DTMF path passed the raw reference to playAudio; the runtime now
+        // resolves it through the VB-6E MediaUriResolver, which requires the
+        // canonical audio/{tenant}/{asset}/{file} shape.
+        asset.setStorageReference("audio/" + TENANT_A + "/" + ASSET_ID + "/prompt.wav");
 
         interaction = new DtmfInteraction();
         interaction.setId(INTERACTION_ID);

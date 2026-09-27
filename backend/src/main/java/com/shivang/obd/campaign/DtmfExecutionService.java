@@ -77,12 +77,62 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
     private final DtmfResultService resultService;
     private final VoiceMediaController mediaController;
     /**
+     * VB-6F: the IVR runtime. Invoked <em>from</em> this service rather than
+     * registered as a second {@code DtmfCollectorTrigger}, so there remains
+     * exactly one CHANNEL_DTMF consumer. Optional, so a deployment without IVR
+     * support still runs single-level DTMF campaigns unchanged.
+     */
+    private final ObjectProvider<IvrExecutionService> ivrExecutionService;
+    /** VB-6E media URI resolution, applied to the DTMF prompt path as well. */
+    private final com.shivang.obd.audio.MediaUriResolver mediaUriResolver;
+    /**
      * VB-3: CONNECT_BY_AGENT action boundary — optional because agent-less
      * deployments (no agent domain wired) still run DTMF campaigns with the
      * default TERMINATE action.
      */
     private final ObjectProvider<com.shivang.obd.voice.agent.AgentConnectTrigger> agentConnectTrigger;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public DtmfExecutionService(
+            CallSessionRepository callSessionRepository,
+            CallLegRepository callLegRepository,
+            CallAttemptRepository callAttemptRepository,
+            CampaignRepository campaignRepository,
+            CampaignExecutionRepository executionRepository,
+            AudioAssetRepository audioAssetRepository,
+            CampaignResourceValidationService resourceValidator,
+            CampaignRuntimeConfigResolver runtimeConfigResolver,
+            DtmfInteractionRepository interactionRepository,
+            DtmfResultService resultService,
+            @Lazy VoiceMediaController mediaController,
+            ObjectProvider<IvrExecutionService> ivrExecutionService,
+            com.shivang.obd.audio.MediaUriResolver mediaUriResolver,
+            ObjectProvider<com.shivang.obd.voice.agent.AgentConnectTrigger> agentConnectTrigger) {
+        this.callSessionRepository = callSessionRepository;
+        this.callLegRepository = callLegRepository;
+        this.callAttemptRepository = callAttemptRepository;
+        this.campaignRepository = campaignRepository;
+        this.executionRepository = executionRepository;
+        this.audioAssetRepository = audioAssetRepository;
+        this.resourceValidator = resourceValidator;
+        this.runtimeConfigResolver = runtimeConfigResolver;
+        this.interactionRepository = interactionRepository;
+        this.resultService = resultService;
+        this.mediaController = mediaController;
+        this.ivrExecutionService = ivrExecutionService;
+        this.mediaUriResolver = mediaUriResolver;
+        this.agentConnectTrigger = agentConnectTrigger;
+    }
+
+    /**
+     * The pre-VB-6F shape: no IVR runtime and no media URI resolver.
+     * <p>
+     * Retained so existing construction sites keep compiling and keep their exact
+     * previous meaning. The IVR supplier yields null, so every entry point takes
+     * the single-level path exactly as before, and the resolver is a real one over
+     * the default {@code audio.storage} configuration rather than a null that
+     * would have to be guarded at every playback site.
+     */
     public DtmfExecutionService(
             CallSessionRepository callSessionRepository,
             CallLegRepository callLegRepository,
@@ -96,18 +146,68 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
             DtmfResultService resultService,
             @Lazy VoiceMediaController mediaController,
             ObjectProvider<com.shivang.obd.voice.agent.AgentConnectTrigger> agentConnectTrigger) {
-        this.callSessionRepository = callSessionRepository;
-        this.callLegRepository = callLegRepository;
-        this.callAttemptRepository = callAttemptRepository;
-        this.campaignRepository = campaignRepository;
-        this.executionRepository = executionRepository;
-        this.audioAssetRepository = audioAssetRepository;
-        this.resourceValidator = resourceValidator;
-        this.runtimeConfigResolver = runtimeConfigResolver;
-        this.interactionRepository = interactionRepository;
-        this.resultService = resultService;
-        this.mediaController = mediaController;
-        this.agentConnectTrigger = agentConnectTrigger;
+        this(callSessionRepository, callLegRepository, callAttemptRepository, campaignRepository,
+                executionRepository, audioAssetRepository, resourceValidator, runtimeConfigResolver,
+                interactionRepository, resultService, mediaController,
+                noIvrRuntime(),
+                new com.shivang.obd.audio.MediaUriResolver(
+                        new com.shivang.obd.audio.AudioStorageProperties()),
+                agentConnectTrigger);
+    }
+
+    /**
+     * An {@link ObjectProvider} that never yields an IVR runtime.
+     * <p>
+     * Used by the pre-VB-6F constructor so existing call sites keep their exact
+     * previous behaviour: every entry point takes the single-level DTMF path,
+     * because a DTMF campaign with an IVR snapshot is a VB-6F configuration and
+     * cannot reach this constructor in production.
+     */
+    private static ObjectProvider<IvrExecutionService> noIvrRuntime() {
+        return new ObjectProvider<>() {
+            @Override
+            public IvrExecutionService getObject() {
+                throw new IllegalStateException("IVR runtime is not wired in this context");
+            }
+
+            @Override
+            public IvrExecutionService getObject(Object... args) {
+                return getObject();
+            }
+
+            @Override
+            public IvrExecutionService getIfAvailable() {
+                return null;
+            }
+
+            @Override
+            public IvrExecutionService getIfUnique() {
+                return null;
+            }
+        };
+    }
+
+    /**
+     * VB-6F: the IVR runtime for this session, or empty when the campaign uses
+     * the single-level DTMF path.
+     * <p>
+     * Every entry point below asks this first, so the single-level code after it
+     * is reached unchanged when a campaign has no IVR snapshot. The snapshot is
+     * read from the FROZEN execution configuration, never the live campaign.
+     */
+    private java.util.Optional<IvrExecutionService.IvrCall> ivrFor(
+            UUID callSessionId, UUID callAttemptId) {
+        if (callAttemptId == null) {
+            return java.util.Optional.empty();
+        }
+        IvrExecutionService ivr = ivrExecutionService.getIfAvailable();
+        if (ivr == null) {
+            return java.util.Optional.empty();
+        }
+        return callAttemptRepository.findById(callAttemptId)
+                .map(this::resolveExecutionConfig)
+                .flatMap(CampaignRuntimeConfigResolver.CampaignRuntimeConfig::asIvr)
+                .map(config -> new IvrExecutionService.IvrCall(config, ivr));
     }
 
     // ------------------------------------------------------------------
@@ -163,6 +263,17 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
             return;
         }
 
+        // VB-6F: a DTMF campaign may run a reusable IVR tree instead of a single
+        // expected sequence. The branch is taken first, so the proven
+        // single-level path below is reached byte-for-byte unchanged when a
+        // campaign has no IVR snapshot.
+        var ivr = ivrFor(callSessionId, callAttemptId);
+        if (ivr.isPresent() && ivr.get().runtime() != null) {
+            ivr.get().runtime().onAnswered(callSessionId, callAttemptId,
+                    ivr.get().config().snapshot());
+            return;
+        }
+
         // VB-2: only DTMF campaigns begin collection on this trigger.
         // (PLAYFILE campaigns are handled by PlayfileExecutionService.)
         if (config.campaignType() != CampaignType.DTMF) {
@@ -213,9 +324,27 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
                 .orElseThrow();
 
         try {
-            mediaController.playAudio(session.getId(), legIdOf(session), asset.getStorageReference());
-            log.info("DTMF campaign playback requested (campaign={}, asset={}, callSession={}, attempt={})",
-                    config.campaignId(), asset.getId(), session.getId(), callAttemptId);
+            // VB-6F: VB-6E fixed this for PLAYFILE (PlayfileExecutionService
+            // resolves the logical storage reference into a FreeSWITCH-readable
+            // path) but left the DTMF path passing the raw reference, so every
+            // DTMF campaign still handed `audio/<tenant>/<asset>/<file>.wav` to
+            // uuid_broadcast, which FreeSWITCH resolves against its own sound
+            // directory. Same choke point, same fix.
+            String mediaUri;
+            try {
+                mediaUri = mediaUriResolver.resolveMediaUri(
+                        asset.getStorageReference(), asset.getId(), session.getTenantId());
+            } catch (IllegalArgumentException unusableReference) {
+                log.warn("DTMF campaign {} audio asset {} has an unusable storage reference: {}",
+                        config.campaignId(), asset.getId(), unusableReference.getMessage());
+                recordConfigFailure(session,
+                        "Audio asset storage reference cannot be resolved for playback");
+                return;
+            }
+            mediaController.playAudio(session.getId(), legIdOf(session), mediaUri);
+            log.info("DTMF campaign playback requested (campaign={}, asset={}, mediaUri={}, "
+                            + "callSession={}, attempt={})",
+                    config.campaignId(), asset.getId(), mediaUri, session.getId(), callAttemptId);
         } catch (RuntimeException e) {
             log.warn("Playback command failed for callSession {}: {}", session.getId(), e.getMessage());
             session.setFailureCode("DTMF_PLAYBACK_FAILED");
@@ -269,6 +398,15 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
                 resolveExecutionConfig(attempt);
         if (config == null || config.campaignType() != CampaignType.DTMF) {
             return; // Not ours — PLAYFILE teardown is handled elsewhere.
+        }
+
+        // VB-6F: for an IVR campaign this arms the wait instead of creating a
+        // single-level interaction. Taken before the single-level parse, so a
+        // campaign with an IVR snapshot never touches the `expected` contract.
+        var ivr = ivrFor(callSessionId, callAttemptId);
+        if (ivr.isPresent() && ivr.get().runtime() != null) {
+            ivr.get().runtime().onPlaybackCompleted(callSessionId, callAttemptId);
+            return;
         }
 
         // Parse the DTMF configuration exclusively from the execution's
@@ -330,6 +468,16 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
 
         if (callAttemptId == null) {
             log.debug("DTMF digit on non-campaign session {} — ignoring", callSessionId);
+            return;
+        }
+
+        // VB-6F: an IVR campaign's digit is resolved against the frozen snapshot
+        // by the IVR runtime. Taken before the single-level interaction lookup,
+        // which would otherwise find no interaction and silently drop the digit.
+        var ivr = ivrFor(callSessionId, callAttemptId);
+        if (ivr.isPresent() && ivr.get().runtime() != null) {
+            ivr.get().runtime().onDtmfDigit(callSessionId, callAttemptId,
+                    ivr.get().config().snapshot(), digit);
             return;
         }
 
@@ -431,6 +579,16 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
 
     @Override
     public void onDtmfTimeout(UUID callSessionId) {
+        // VB-6F: a per-node IVR deadline. Dispatched through the SAME
+        // DtmfTimeoutScheduler scan — no second scheduler — and resolved by
+        // walking to the session's attempt, because the timeout path is
+        // dispatched with a session id only.
+        var ivr = ivrForTimeout(callSessionId);
+        if (ivr.isPresent() && ivr.get().runtime() != null) {
+            ivr.get().runtime().onStepTimeout(callSessionId);
+            return;
+        }
+
         Optional<DtmfInteraction> interactionOpt =
                 interactionRepository.findByCallSessionIdAndDeletedAtIsNull(callSessionId);
         if (interactionOpt.isEmpty()) {
@@ -459,6 +617,24 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
         log.info("DTMF collection timed out (callSession={}, collected='{}')",
                 callSessionId, finalized.get().getCollectedDigits());
         hangUpCall(callSessionId, "DTMF TIMEOUT");
+    }
+
+    /**
+     * VB-6F: resolves the IVR runtime for a timeout dispatch, which carries only
+     * a session id. The attempt is found through the session's open IVR step, so
+     * no live IVR row is read and no campaign lookup is needed.
+     */
+    private java.util.Optional<IvrExecutionService.IvrCall> ivrForTimeout(UUID callSessionId) {
+        IvrExecutionService ivr = ivrExecutionService.getIfAvailable();
+        if (ivr == null) {
+            return java.util.Optional.empty();
+        }
+        return callSessionRepository.findById(callSessionId)
+                .map(CallSession::getCallAttemptId)
+                .flatMap(callAttemptRepository::findById)
+                .map(this::resolveExecutionConfig)
+                .flatMap(CampaignRuntimeConfigResolver.CampaignRuntimeConfig::asIvr)
+                .map(config -> new IvrExecutionService.IvrCall(config, ivr));
     }
 
     /**

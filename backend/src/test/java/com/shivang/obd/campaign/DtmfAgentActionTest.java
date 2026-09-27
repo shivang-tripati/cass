@@ -132,7 +132,10 @@ class DtmfAgentActionTest {
         asset.setId(ASSET);
         asset.setTenantId(TENANT);
         asset.setStatus(AudioAssetStatus.APPROVED);
-        asset.setStorageReference("/srv/media/promo.wav");
+        // VB-6F: canonical logical reference (see IvrFromCampaignService tests and
+        // DtmfExecutionServiceTest). The DTMF runtime resolves it through the
+        // VB-6E MediaUriResolver before dialling.
+        asset.setStorageReference("audio/" + TENANT + "/" + ASSET + "/promo.wav");
         when(audioAssetRepository.findByIdAndTenantIdAndDeletedAtIsNull(ASSET, TENANT))
                 .thenReturn(Optional.of(asset));
         when(interactionRepository.findByCallSessionIdAndDeletedAtIsNull(SESSION))

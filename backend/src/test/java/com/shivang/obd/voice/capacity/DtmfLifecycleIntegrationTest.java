@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -56,7 +57,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 class DtmfLifecycleIntegrationTest extends VoicePostgresIntegrationSupport {
 
-    private static final String AUDIO_REF = "tenants/it/it-dtmf.wav";
+    /** VB-6F: the media root the resolver is configured with. */
+    private static final String MEDIA_ROOT = "/usr/share/freeswitch/sounds";
 
     @Autowired
     private CallAttemptRepository attemptRepository;
@@ -178,7 +180,8 @@ class DtmfLifecycleIntegrationTest extends VoicePostgresIntegrationSupport {
                         + "VALUES (?, ?, 'it-asset', 'prompt.wav', 'audio/wav', 1024, ?, 'APPROVED')")) {
             ps.setObject(1, id);
             ps.setObject(2, ownerTenantId);
-            ps.setString(3, AUDIO_REF);
+            // VB-6F: canonical logical reference naming this asset and its owner.
+        ps.setString(3, "audio/" + ownerTenantId + "/" + id + "/it-dtmf.wav");
             ps.executeUpdate();
         }
     }
@@ -311,7 +314,7 @@ class DtmfLifecycleIntegrationTest extends VoicePostgresIntegrationSupport {
                 "{\"dtmf\": {\"expected\": \"1\", \"timeoutSecs\": 10}}");
 
         eslEventService.processEvent(event("CHANNEL_ANSWER", callUuid));
-        verify(mediaController).playAudio(any(UUID.class), any(), eq(AUDIO_REF));
+        verify(mediaController).playAudio(any(UUID.class), any(), startsWith(MEDIA_ROOT));
 
         eslEventService.processEvent(event("PLAYBACK_START", callUuid));
         eslEventService.processEvent(event("PLAYBACK_STOP", callUuid));

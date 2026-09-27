@@ -30,12 +30,31 @@ public class CampaignConfigurationService {
 
     private final CampaignExecutionConfigurationRepository snapshotRepository;
     private final CampaignTypeConfigValidator typeConfigValidator;
+    /**
+     * VB-6F: captures a selected IVR tree into the frozen execution config.
+     * <p>
+     * Optional, so this service still constructs with the two arguments several
+     * existing tests use, and so a deployment without IVR support can still
+     * create snapshots for every other campaign type. When absent, a campaign
+     * whose typeConfig selects an IVR tree fails deterministically rather than
+     * silently snapshotting a bare reference that no call could execute.
+     */
+    private final java.util.Optional<IvrSnapshotCapture> ivrSnapshotCapture;
 
     public CampaignConfigurationService(
             CampaignExecutionConfigurationRepository snapshotRepository,
             CampaignTypeConfigValidator typeConfigValidator) {
+        this(snapshotRepository, typeConfigValidator, java.util.Optional.empty());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public CampaignConfigurationService(
+            CampaignExecutionConfigurationRepository snapshotRepository,
+            CampaignTypeConfigValidator typeConfigValidator,
+            java.util.Optional<IvrSnapshotCapture> ivrSnapshotCapture) {
         this.snapshotRepository = snapshotRepository;
         this.typeConfigValidator = typeConfigValidator;
+        this.ivrSnapshotCapture = ivrSnapshotCapture;
     }
 
     /**
@@ -54,12 +73,40 @@ public class CampaignConfigurationService {
                 typeConfigValidator.validateAndParse(
                         campaign.getCampaignType(), campaign.getTypeConfig());
 
+        // VB-6F: an IVR campaign's frozen config carries the whole tree, not just
+        // a reference. Captured HERE, at execution-creation time, which is the
+        // only point where a snapshot is written — so a live IVR edit can never
+        // change a call already running, and a new execution picks the edit up.
+        CampaignTypeConfig frozen = freezeIvrIfSelected(campaign, typeConfig);
+
         CampaignExecutionConfiguration entity = CampaignExecutionConfiguration.materialize(
                 campaign.getId(),
                 campaign.getTenantId(),
-                toSnapshot(campaign, typeConfig),
+                toSnapshot(campaign, frozen),
                 Instant.now());
         return snapshotRepository.save(entity);
+    }
+
+    /**
+     * VB-6F: replaces an IVR tree <em>reference</em> with the frozen tree.
+     *
+     * <p>No-op for every other campaign type, and for a DTMF campaign still on
+     * the single-level contract. A reference that cannot be captured — an
+     * inactive tree, broken structure, unapproved prompt — throws, so an
+     * execution is never created that could not be run.
+     */
+    private CampaignTypeConfig freezeIvrIfSelected(
+            CampaignEntity campaign, CampaignTypeConfig typeConfig) {
+        if (!(typeConfig instanceof com.shivang.obd.campaign.config.IvrCampaignConfig ivr)) {
+            return typeConfig;
+        }
+        IvrSnapshotCapture capture = ivrSnapshotCapture.orElseThrow(() ->
+                new CampaignConfigInvalidException(
+                        "This campaign references IVR tree " + ivr.treeId()
+                                + " but IVR snapshot capture is unavailable in this deployment."));
+        var snapshot = capture.capture(ivr.treeId(), campaign.getTenantId());
+        return new com.shivang.obd.campaign.config.IvrCampaignConfig(
+                ivr.treeId(), ivr.schemaVersion(), snapshot);
     }
 
     /**

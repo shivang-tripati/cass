@@ -102,6 +102,23 @@ public class CampaignRuntimeConfigResolver {
                     typeConfigSchemaVersion, typeConfig, dailyDialLimit, null, null);
         }
 
+        /**
+         * VB-6F: the IVR tree this execution is running, or empty when the
+         * campaign uses the single-level DTMF path. Read from the FROZEN
+         * execution snapshot only, never the live campaign.
+         */
+        public com.shivang.obd.voice.ivr.IvrExecutionSnapshot ivrSnapshot() {
+            return asIvr().map(com.shivang.obd.campaign.config.IvrCampaignConfig::snapshot)
+                    .orElse(null);
+        }
+
+        /** The campaign's IVR reference, when this campaign selects a tree. */
+        public java.util.Optional<com.shivang.obd.campaign.config.IvrCampaignConfig> asIvr() {
+            return typeConfig instanceof com.shivang.obd.campaign.config.IvrCampaignConfig ivr
+                    ? java.util.Optional.of(ivr)
+                    : java.util.Optional.empty();
+        }
+
         static CampaignRuntimeConfig fromSnapshot(
                 CampaignExecutionConfiguration snapshot) {
             CampaignConfigurationSnapshot s = snapshot.getConfiguration();
