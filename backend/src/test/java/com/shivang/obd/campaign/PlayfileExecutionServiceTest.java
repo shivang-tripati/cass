@@ -30,7 +30,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 /**
- * VB-1 campaign execution tests (P1–P3, P24): the PlaybackTrigger only plays
+ * VB-1 campaign execution tests (P1â€“P3, P24): the PlaybackTrigger only plays
  * media for PLAYFILE+AUDIO campaigns with a valid, APPROVED, tenant-owned
  * audio asset; configuration problems are classified as permanent
  * PLAYBACK_CONFIG_INVALID and command failures as temporary PLAYBACK_FAILED.
@@ -53,7 +53,21 @@ class PlayfileExecutionServiceTest {
             UUID.fromString("cd000000-0000-4000-8000-0000000000c3");
     private static final UUID SESSION_ID =
             UUID.fromString("cd000000-0000-4000-8000-0000000000c4");
-    private static final String AUDIO_REF = "tenants/tenant-a/promo.wav";
+    /**
+     * VB-6E: a CANONICAL logical storage reference, in the exact shape
+     * {@code LocalAudioStorage} produces. Pre-VB-6E this was the loose string
+     * {@code "tenants/tenant-a/promo.wav"}, which the dial path forwarded to
+     * FreeSWITCH verbatim; the media resolver would now (correctly) refuse it.
+     */
+    private static final String AUDIO_REF =
+            "audio/aa000000-0000-4000-8000-00000000000a/"
+                    + "cd000000-0000-4000-8000-0000000000c2/promo.wav";
+
+    /** The path the resolver produces for AUDIO_REF, which is what is dialled. */
+    private static final String MEDIA_URI =
+            "/usr/share/freeswitch/sounds/"
+                    + "aa000000-0000-4000-8000-00000000000a/"
+                    + "cd000000-0000-4000-8000-0000000000c2/promo.wav";
 
     @Mock
     private CallSessionRepository callSessionRepository;
@@ -87,7 +101,10 @@ class PlayfileExecutionServiceTest {
                 // the per-test asset stubs drive validation scenarios as before.
                 new CampaignResourceValidationService(null, audioAssetRepository, null),
                 new CampaignRuntimeConfigResolver(configurationService),
-                mediaController);
+    // VB-6E: the real media URI resolver, so the translation under test is
+    // exercised rather than stubbed out.
+    mediaUriResolver(),
+    mediaController);
 
         session = session(
                 SESSION_ID,
@@ -115,7 +132,7 @@ class PlayfileExecutionServiceTest {
         when(campaignRepository.findByIdAndTenantIdAndDeletedAtIsNull(CAMPAIGN_ID, TENANT_A))
                 .thenReturn(Optional.of(campaign));
         // VB-6A correction: the execution resolves its mandatory immutable
-        // snapshot — the snapshot carries the same values the live campaign
+        // snapshot â€” the snapshot carries the same values the live campaign
         // fixture has (no live fallback).
         var execution = new com.shivang.obd.campaign.CampaignExecution();
         execution.setId(EXECUTION_ID);
@@ -168,7 +185,7 @@ class PlayfileExecutionServiceTest {
             service.onAnswered(session.getId(), ATTEMPT_ID);
 
             verify(mediaController).playAudio(
-                    eq(session.getId()), any(), eq(AUDIO_REF));
+                    eq(session.getId()), any(), eq(MEDIA_URI));
             verify(mediaController, never()).terminateCall(any(UUID.class), anyString());
         }
 
@@ -263,7 +280,7 @@ class PlayfileExecutionServiceTest {
         @DisplayName("campaign lookup is tenant-scoped: foreign campaign is not resolved")
         void campaignLookupTenantScoped() {
             attempt.setCampaignId(CAMPAIGN_ID);
-            // Attempt claims tenant B, campaign exists only under tenant A —
+            // Attempt claims tenant B, campaign exists only under tenant A â€”
             // the tenant-scoped finder returns empty, so no playback occurs.
             attempt.setTenantId(TENANT_B);
             when(campaignRepository.findByIdAndTenantIdAndDeletedAtIsNull(CAMPAIGN_ID, TENANT_B))
@@ -321,5 +338,13 @@ class PlayfileExecutionServiceTest {
 
             verify(mediaController, never()).playAudio(any(UUID.class), any(), anyString());
         }
+    }
+    /** VB-6E: a real resolver over the FreeSWITCH-default media root. */
+    private static com.shivang.obd.audio.MediaUriResolver mediaUriResolver() {
+        com.shivang.obd.audio.AudioStorageProperties properties =
+                new com.shivang.obd.audio.AudioStorageProperties();
+        properties.setEnabled(true);
+        properties.setFreeswitchMediaRoot("/usr/share/freeswitch/sounds");
+        return new com.shivang.obd.audio.MediaUriResolver(properties);
     }
 }

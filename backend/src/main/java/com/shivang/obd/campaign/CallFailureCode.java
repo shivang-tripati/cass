@@ -234,6 +234,42 @@ public enum CallFailureCode {
      */
     DAILY_ATTEMPT_LIMIT_REACHED(RetryClass.PERMANENT),
 
+    /**
+     * The established outbound call exceeded its configured maximum duration
+     * and was terminated by the platform (VB-6E).
+     *
+     * <p><b>DISPATCHED, not pre-dispatch.</b> This is the one new code that
+     * must stay outside {@link FailureClassification}'s pre-dispatch set: the
+     * provider did accept the call, the subscriber was genuinely connected and
+     * heard part of the blast, so the campaign retry policy legitimately
+     * governs whether to try again. A redial is a real possibility here, unlike
+     * a routing or compliance rejection where nobody was ever called.
+     *
+     * <p>TEMPORARY, and deliberately <em>not</em> permanent: exceeding the
+     * ceiling says nothing about the contact, so a tenant whose duration is set
+     * too low still gets a redial. The fix is configuration, not suppression.
+     *
+     * <p>It is recorded on the {@code CallSession} and reaches the
+     * {@code CallAttempt} through the same
+     * {@code session.getFailureCode()} precedence that
+     * {@link #PLAYBACK_CONFIG_INVALID} uses, so a normal-clearing hangup
+     * caused by our own timeout can never be mistaken for a delivered blast.
+     */
+    MAX_DURATION_EXCEEDED(RetryClass.TEMPORARY),
+
+    /**
+     * A campaign execution or call attempt was found stale by the VB-6E
+     * reconciler — the provider never reported an outcome, typically because
+     * the process died or an ESL event was lost (VB-6E).
+     *
+     * <p>TEMPORARY: the call may or may not have reached the subscriber, and
+     * that is exactly the case a campaign-configured retry is for. It is
+     * <b>not</b> pre-dispatch, because the attempt was dispatched (it holds a
+     * VB-6C hold and a VB-6D.3 consumption), so it must be classified against
+     * the campaign's rules rather than silently dropped.
+     */
+    STALE_ATTEMPT_RECONCILED(RetryClass.TEMPORARY),
+
     // === Inbound / agent-outbound boundaries (VB-4D / VB-4E) ===
 
     /** No usable inbound route for the called DID. */

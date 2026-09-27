@@ -247,25 +247,37 @@ class CampaignResourceValidationPostgresIntegrationTest {
     }
 
     @Test
-    @DisplayName("PG-D4: CREATE rejects foreign and unapproved TTS; accepts approved GLOBAL")
+    @DisplayName("PG-D4: PLAYFILE + TTS is refused at configuration time (VB-6E OD-B)")
     void createTtsMatrix() {
+        // VB-6E (OD-B): TTS is a governed resource but there is no TTS
+        // synthesis/playback runtime. Pre-VB-6E a PLAYFILE campaign could carry
+        // an APPROVED TTS template, pass create, pass readiness, be activated and
+        // executed, and then fail EVERY call with PLAYBACK_CONFIG_INVALID. This
+        // test now pins the earlier, honest refusal - including for a template
+        // that is perfectly valid, because the blocker is the missing runtime,
+        // not the template.
         UUID groupId = seedContactGroup(tenantA);
         UUID didId = seedDid(tenantA, DidStatus.ACTIVE, AllocationState.ASSIGNED);
-        UUID foreignTenantTts = seedTts(TtsTemplateScope.TENANT, TtsTemplateStatus.APPROVED, tenantB);
-        UUID pendingGlobalTts = seedTts(TtsTemplateScope.GLOBAL, TtsTemplateStatus.PENDING_APPROVAL, null);
         UUID approvedGlobalTts = seedTts(TtsTemplateScope.GLOBAL, TtsTemplateStatus.APPROVED, null);
 
-        for (UUID badTts : List.of(foreignTenantTts, pendingGlobalTts, UUID.randomUUID())) {
-            var request = createRequest(groupId, didId, null, badTts, ContentMode.TTS);
+        for (UUID anyTts : List.of(approvedGlobalTts, UUID.randomUUID())) {
+            var request = createRequest(groupId, didId, null, anyTts, ContentMode.TTS);
             assertThatThrownBy(() -> createCampaign(tenantA, request))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("TTS template does not exist or is not approved for use.");
+                .hasMessageContaining("do not support TTS content");
         }
-
-        UUID okId = createCampaign(tenantA, groupId, didId, null, approvedGlobalTts,
-            ContentMode.TTS);
-        assertThat(okId).isNotNull();
     }
+
+    /**
+     * The TTS <em>resource</em> rules themselves are unchanged by VB-6E and stay
+     * covered where they already were, by
+     * {@code CampaignResourceValidationServiceTest}'s TTS cases
+     * ({@code usableTemplateIsValid}, {@code nullTemplateReferenceIsNotUsable},
+     * {@code accessibleUnapprovedTemplateIsClassified},
+     * {@code inaccessibleTemplateIsNotAvailable}) and by
+     * {@code TtsGovernancePostgresIntegrationTest}'s write/activation gate. This
+     * suite therefore does not duplicate them.
+     */
 
     // === E. UPDATE ===
 
@@ -314,7 +326,7 @@ class CampaignResourceValidationPostgresIntegrationTest {
     }
 
     @Test
-    @DisplayName("PG-E3: content-mode transition is validated with the target mode's semantics")
+    @DisplayName("PG-E3: PLAYFILE cannot switch to TTS content (VB-6E OD-B); AUDIO stays intact")
     void updateContentModeTransitionIsValidated() {
         UUID groupId = seedContactGroup(tenantA);
         UUID didId = seedDid(tenantA, DidStatus.ACTIVE, AllocationState.ASSIGNED);
@@ -324,20 +336,29 @@ class CampaignResourceValidationPostgresIntegrationTest {
         UUID campaignId = createCampaign(tenantA, groupId, didId, audioId, null,
             ContentMode.AUDIO);
 
-        // AUDIO → TTS with a foreign TENANT template is rejected.
+        // VB-6E (OD-B): switching a PLAYFILE campaign to TTS is refused, and it
+        // is refused because the runtime does not exist - not because of the
+        // template. So this holds even for a perfectly valid APPROVED GLOBAL
+        // template, which is exactly the pre-VB-6E trap: a campaign could be
+        // switched into a state that fails 100% of its calls.
         assertThatThrownBy(() -> updateCampaign(tenantA, campaignId,
             updateRequest(groupId, didId, null, foreignTts, ContentMode.TTS)))
             .isInstanceOf(BusinessException.class)
-            .hasMessageContaining("TTS template does not exist or is not approved for use.");
+            .hasMessageContaining("do not support TTS content");
 
-        // AUDIO → TTS with an approved GLOBAL template is accepted.
-        updateCampaign(tenantA, campaignId,
-            updateRequest(groupId, didId, null, globalTts, ContentMode.TTS));
+        assertThatThrownBy(() -> updateCampaign(tenantA, campaignId,
+            updateRequest(groupId, didId, null, globalTts, ContentMode.TTS)))
+            .as("an approved template must not unlock an unimplemented capability")
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("do not support TTS content");
 
+        // The rejected updates must not have mutated the campaign.
         CampaignEntity reloaded = entityManager.find(CampaignEntity.class, campaignId);
-        assertThat(reloaded.getContentMode()).isEqualTo(ContentMode.TTS);
-        assertThat(reloaded.getTtsTemplateId()).isEqualTo(globalTts);
-        assertThat(reloaded.getAudioAssetId()).isNull();
+        assertThat(reloaded.getContentMode())
+                .as("a rejected update leaves the campaign on AUDIO")
+                .isEqualTo(ContentMode.AUDIO);
+        assertThat(reloaded.getAudioAssetId()).isEqualTo(audioId);
+        assertThat(reloaded.getTtsTemplateId()).isNull();
     }
 
     // === F. ACTIVATION / READINESS ===
@@ -494,10 +515,17 @@ class CampaignResourceValidationPostgresIntegrationTest {
     @Test
     @DisplayName("PG-G3: TTS approval revocation and deletion detected at runtime")
     void ttsInvalidationIsDetectedAfterCreation() {
+        // VB-6E (OD-B): this suite no longer creates a PLAYFILE campaign for
+        // the TTS cases, because PLAYFILE + TTS is now refused at configuration
+        // time (see PG-D4). That does not weaken the test: every assertion here
+        // is about the *validator* detecting that a template became unusable,
+        // which is a property of the resource, not of any campaign row.
         UUID groupId = seedContactGroup(tenantA);
         UUID didId = seedDid(tenantA, DidStatus.ACTIVE, AllocationState.ASSIGNED);
         UUID globalTts = seedTts(TtsTemplateScope.GLOBAL, TtsTemplateStatus.APPROVED, null);
-        createCampaign(tenantA, groupId, didId, null, globalTts, ContentMode.TTS);
+        assertThat(validator.validateTts(globalTts, tenantA).usable())
+            .as("an APPROVED GLOBAL template is usable before invalidation")
+            .isTrue();
 
         transactionTemplate.executeWithoutResult(tx -> {
             TtsTemplateEntity template = entityManager.find(TtsTemplateEntity.class, globalTts);
@@ -741,6 +769,13 @@ class CampaignResourceValidationPostgresIntegrationTest {
             createRequest(groupId, didId, audioId, ttsId, contentMode));
     }
 
+    /** VB-6E: campaign type is explicit, so TTS rules can be tested on DTMF. */
+    private UUID createCampaign(UUID tenantId, UUID groupId, UUID didId, UUID audioId,
+                                UUID ttsId, ContentMode contentMode, CampaignType type) {
+        return createCampaign(tenantId,
+            createRequest(groupId, didId, audioId, ttsId, contentMode, type));
+    }
+
     private UUID createCampaign(UUID tenantId, CreateCampaignRequest request) {
         tenantScope(tenantId);
         return transactionTemplate.execute(tx ->
@@ -771,14 +806,21 @@ class CampaignResourceValidationPostgresIntegrationTest {
 
     private CreateCampaignRequest createRequest(UUID groupId, UUID didId, UUID audioId,
                                                 UUID ttsId, ContentMode contentMode) {
+        return createRequest(groupId, didId, audioId, ttsId, contentMode, CampaignType.PLAYFILE);
+    }
+
+    private CreateCampaignRequest createRequest(UUID groupId, UUID didId, UUID audioId,
+                                                UUID ttsId, ContentMode contentMode,
+                                                CampaignType type) {
         return new CreateCampaignRequest(
-            "c-create-" + SEQ.incrementAndGet(), null, CampaignType.PLAYFILE, null,
+            "c-create-" + SEQ.incrementAndGet(), null, type, null,
             groupId, didId,
             contentMode, audioId, ttsId,
             scheduleConfig(),
             new RetryPolicyConfig(0, null, null),
             null, null, false, null);
     }
+
 
     private UpdateCampaignRequest updateRequest(UUID groupId, UUID didId, UUID audioId,
                                                 UUID ttsId, ContentMode contentMode) {

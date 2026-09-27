@@ -98,7 +98,8 @@ class OutboundDialServiceRoutingTest {
                 new CampaignRuntimeConfigResolver(configurationService),
                 dialer, eligibilityService,
                 voiceRoutingService, voiceCapacity, callSessionRepository, callLegRepository,
-                dailyDialLimitService, dailyAttemptSafetyService);
+                dailyDialLimitService, dailyAttemptSafetyService,
+                new PreDispatchFailureMapper());
 
         // VB-6C.1 defaults: usage day resolves, bucket admits. Individual
         // tests override the exact behavior they exercise.

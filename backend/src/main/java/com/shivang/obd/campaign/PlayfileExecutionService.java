@@ -2,6 +2,7 @@ package com.shivang.obd.campaign;
 
 import com.shivang.obd.audio.AudioAssetEntity;
 import com.shivang.obd.audio.AudioAssetRepository;
+import com.shivang.obd.audio.MediaUriResolver;
 import com.shivang.obd.voice.call.CallLeg;
 import com.shivang.obd.voice.call.CallLegRepository;
 import com.shivang.obd.voice.call.CallSession;
@@ -9,6 +10,7 @@ import com.shivang.obd.voice.call.CallSessionRepository;
 import com.shivang.obd.voice.call.CallSessionStatus;
 import com.shivang.obd.voice.media.PlaybackTrigger;
 import com.shivang.obd.voice.media.VoiceMediaController;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
@@ -60,6 +62,8 @@ public class PlayfileExecutionService implements PlaybackTrigger {
     private final CampaignResourceValidationService resourceValidator;
     /** Execution-scoped configuration resolution (immutable snapshot, VB-6A). */
     private final CampaignRuntimeConfigResolver runtimeConfigResolver;
+    /** Logical storage reference to FreeSWITCH-readable media path (VB-6E). */
+    private final MediaUriResolver mediaUriResolver;
     private final VoiceMediaController mediaController;
 
     public PlayfileExecutionService(
@@ -71,6 +75,7 @@ public class PlayfileExecutionService implements PlaybackTrigger {
             AudioAssetRepository audioAssetRepository,
             CampaignResourceValidationService resourceValidator,
             CampaignRuntimeConfigResolver runtimeConfigResolver,
+            MediaUriResolver mediaUriResolver,
             @Lazy VoiceMediaController mediaController) {
         this.callSessionRepository = callSessionRepository;
         this.callLegRepository = callLegRepository;
@@ -80,6 +85,7 @@ public class PlayfileExecutionService implements PlaybackTrigger {
         this.audioAssetRepository = audioAssetRepository;
         this.resourceValidator = resourceValidator;
         this.runtimeConfigResolver = runtimeConfigResolver;
+        this.mediaUriResolver = mediaUriResolver;
         this.mediaController = mediaController;
     }
 
@@ -114,6 +120,12 @@ public class PlayfileExecutionService implements PlaybackTrigger {
             return;
         }
         CallAttempt attempt = attemptOpt.get();
+
+        // VB-6E: the maximum call duration starts when the call is ANSWERED.
+        // Recorded before any playback decision so a call that fails
+        // configuration validation is still bounded, and so a call that is
+        // played and then runs long is terminated by the reconciler.
+        applyMaxCallDuration(callAttemptId, session);
 
         // Campaign lookup is tenant-scoped (isolation): the attempt's
         // campaignId must resolve within the attempt's own tenant.
@@ -190,12 +202,37 @@ public class PlayfileExecutionService implements PlaybackTrigger {
                         config.audioAssetId(), session.getTenantId())
                 .orElseThrow();
 
+        // VB-6E: translate the asset's LOGICAL storage reference into a path
+        // FreeSWITCH can actually open. Before VB-6E the raw reference
+        // ("audio/{tenant}/{asset}/{file}") was handed to uuid_broadcast, which
+        // FreeSWITCH resolves against its own sound directory, so playback
+        // could not succeed. The resolver validates shape, tenant and asset
+        // identity, and refuses traversal, so a client-supplied reference can
+        // never reach the telephony command.
+        String mediaUri;
+        try {
+            mediaUri = mediaUriResolver.resolveMediaUri(
+                    asset.getStorageReference(), asset.getId(), session.getTenantId());
+        } catch (IllegalArgumentException unusableReference) {
+            // A reference that is malformed, names another tenant or another
+            // asset, or carries a traversal attempt. Classified as a permanent
+            // configuration fault: the same asset would fail identically on
+            // every retry, so retrying is pure waste and the campaign operator
+            // has to fix the reference.
+            log.warn("Audio asset {} has an unusable storage reference for playback: {}",
+                    config.audioAssetId(), unusableReference.getMessage());
+            recordPlaybackFailure(session, PLAYBACK_CONFIG_INVALID_CODE,
+                    "Audio asset storage reference cannot be resolved for playback");
+            return;
+        }
+
         // P6 trigger: request playback on the answered call. PLAYBACK_START
         // (→ PLAYING) and PLAYBACK_STOP (→ hangup) arrive as ESL events.
         try {
-            mediaController.playAudio(session.getId(), legIdOf(session), asset.getStorageReference());
-            log.info("PLAYFILE playback requested (campaign={}, asset={}, callSession={}, attempt={})",
-                    config.campaignId(), asset.getId(), session.getId(), callAttemptId);
+            mediaController.playAudio(session.getId(), legIdOf(session), mediaUri);
+            log.info("PLAYFILE playback requested (campaign={}, asset={}, mediaUri={}, "
+                            + "callSession={}, attempt={})",
+                    config.campaignId(), asset.getId(), mediaUri, session.getId(), callAttemptId);
         } catch (RuntimeException e) {
             // Command-level failure (channel gone, ESL error). The hangup path
             // will finalize; record why for diagnostics.
@@ -277,6 +314,44 @@ public class PlayfileExecutionService implements PlaybackTrigger {
     private UUID legIdOf(CallSession session) {
         var legs = callLegRepository.findByCallSessionIdAndDeletedAtIsNull(session.getId());
         return legs.isEmpty() ? null : legs.get(0).getId();
+    }
+
+    /**
+     * VB-6E: records the maximum call duration deadline on the session.
+     *
+     * <p>Called from the answered path, because the duration is defined as the
+     * lifetime of an ESTABLISHED call. The deadline is computed from the
+     * <b>frozen snapshot</b> value, never from the live campaign, and is
+     * persisted so the reconciler's sweep is an indexed range scan and the
+     * timeout is idempotent. A session that already has a deadline is left
+     * alone, so a duplicate answer event cannot move it.
+     *
+     * @return true when a deadline was recorded by this call
+     */
+    private boolean applyMaxCallDuration(UUID callAttemptId, CallSession session) {
+        if (session.getDeadlineAt() != null) {
+            return false;
+        }
+        var attemptOpt = callAttemptRepository.findById(callAttemptId);
+        if (attemptOpt.isEmpty()) {
+            return false;
+        }
+        CampaignRuntimeConfigResolver.CampaignRuntimeConfig config =
+                resolveExecutionConfig(attemptOpt.get());
+        if (config == null) {
+            return false;
+        }
+        int seconds = MaxCallDurationPolicy.effectiveSeconds(config.maxCallDurationSeconds());
+        Instant answeredAt = session.getAnsweredAt() != null
+                ? session.getAnsweredAt()
+                : Instant.now();
+        session.setAnsweredAt(answeredAt);
+        session.setDeadlineAt(answeredAt.plusSeconds(seconds));
+        callSessionRepository.save(session);
+
+        log.info("Call session {} answered - maximum call duration {}s (deadline {})",
+                session.getId(), seconds, session.getDeadlineAt());
+        return true;
     }
 
     private void recordPlaybackFailure(CallSession session, String code, String reason) {

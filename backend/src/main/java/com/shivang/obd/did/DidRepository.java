@@ -30,6 +30,20 @@ public interface DidRepository
         UUID id, UUID tenantId, DidStatus status, AllocationState allocationState);
 
     /**
+     * VB-6E: the same predicate as the {@code exists…} form above, but returning
+     * the row, so a caller that must validate a DID it did not receive from the
+     * caller (a routing profile's pinned DID) can do the check and use the
+     * result in one tenant-bounded query.
+     *
+     * <p>This is the ownership gate that a profile-pinned DID must pass before it
+     * can be dialed as the caller ID. A foreign, inactive or unassigned DID
+     * simply does not resolve, so it cannot become the CLI the subscriber sees
+     * nor the VB-6C daily-dial-limit bucket key.
+     */
+    Optional<DidEntity> findByIdAndTenantIdAndDeletedAtIsNullAndStatusAndAllocationState(
+        UUID id, UUID tenantId, DidStatus status, AllocationState allocationState);
+
+    /**
      * Inbound routing lookup (VB-4D): resolve a DID by the destination
      * number FreeSWITCH reported. Uniqueness of the live E.164 is a
      * database invariant (V16 {@code uq_dids_e164_live}); tenant ownership

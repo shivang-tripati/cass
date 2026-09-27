@@ -95,6 +95,25 @@ public class CallSession extends AuditableEntity {
     @Column(name = "provider_call_id", length = 128)
     private String providerCallId;
 
+    /**
+     * VB-6E: the authoritative expiry instant for this call, computed once at
+     * answer time as {@code answeredAt + frozenMaxCallDurationSeconds} and
+     * persisted.
+     *
+     * <p>Persisting the deadline rather than recomputing it is what makes the
+     * maximum-duration sweep a single indexed range scan and, more importantly,
+     * what makes the timeout <b>idempotent</b>: a session past its deadline is
+     * terminal for timeout purposes however many times it is examined, and a
+     * duplicate or late ESL event cannot move the deadline or resurrect the
+     * call.
+     *
+     * <p>{@code null} means "not governed by this control" — the session was
+     * never answered, is not a governed call type, or predates VB-6E. Null
+     * sessions are never swept.
+     */
+    @Column(name = "deadline_at")
+    private java.time.Instant deadlineAt;
+
     /** Gateway used for this session (for capacity tracking). */
     @Column(name = "gateway_id")
     private UUID gatewayId;

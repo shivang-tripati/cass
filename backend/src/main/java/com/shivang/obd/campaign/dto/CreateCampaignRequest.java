@@ -1,6 +1,7 @@
 package com.shivang.obd.campaign.dto;
 
 import com.shivang.obd.campaign.CampaignDailyAttempts;
+import com.shivang.obd.campaign.MaxCallDurationSeconds;
 import com.shivang.obd.campaign.DailyDialLimit;
 import tools.jackson.databind.JsonNode;
 import com.shivang.obd.campaign.CampaignRunMode;
@@ -74,7 +75,20 @@ public record CreateCampaignRequest(
         + "snapshot, so editing the campaign later does not change a running "
         + "execution's ceiling.",
         minimum = "1", maximum = "10", example = "4")
-    Integer maxDailyAttempts
+    Integer maxDailyAttempts,
+
+    @MaxCallDurationSeconds
+    @Schema(description = "Optional maximum lifetime of an ESTABLISHED outbound call, in "
+        + "seconds (1-3600). Null (omitted) uses the platform default of 300 seconds (5 "
+        + "minutes). This is NOT a ring timeout, NOT a provider connection timeout and NOT a "
+        + "playback length: it bounds the active call session from the moment the provider "
+        + "reports the channel was answered. When exceeded, the platform terminates the "
+        + "session and the attempt fails with MAX_DURATION_EXCEEDED, which the campaign retry "
+        + "policy may then govern because the subscriber was genuinely called. Frozen into the "
+        + "execution snapshot, so editing the campaign later does not change a running "
+        + "execution's call duration.",
+        minimum = "1", maximum = "3600", example = "180")
+    Integer maxCallDurationSeconds
 ) {
 
     /**
@@ -101,6 +115,33 @@ public record CreateCampaignRequest(
             Integer dailyDialLimit) {
         this(name, description, campaignType, runMode, contactGroupId, didId, contentMode,
                 audioAssetId, ttsTemplateId, schedule, retryPolicy, typeConfig,
-                integrationConfig, callOnWhitelistNumbers, dailyDialLimit, null);
+                integrationConfig, callOnWhitelistNumbers, dailyDialLimit, null, null);
+    }
+
+    /**
+     * The pre-VB-6E shape: no maximum call duration. Retained for the same
+     * reason — a request built this way means "use the platform default of 300
+     * seconds".
+     */
+    public CreateCampaignRequest(
+            String name,
+            String description,
+            CampaignType campaignType,
+            CampaignRunMode runMode,
+            UUID contactGroupId,
+            UUID didId,
+            ContentMode contentMode,
+            UUID audioAssetId,
+            UUID ttsTemplateId,
+            ScheduleConfig schedule,
+            RetryPolicyConfig retryPolicy,
+            JsonNode typeConfig,
+            JsonNode integrationConfig,
+            Boolean callOnWhitelistNumbers,
+            Integer dailyDialLimit,
+            Integer maxDailyAttempts) {
+        this(name, description, campaignType, runMode, contactGroupId, didId, contentMode,
+                audioAssetId, ttsTemplateId, schedule, retryPolicy, typeConfig,
+                integrationConfig, callOnWhitelistNumbers, dailyDialLimit, maxDailyAttempts, null);
     }
 }

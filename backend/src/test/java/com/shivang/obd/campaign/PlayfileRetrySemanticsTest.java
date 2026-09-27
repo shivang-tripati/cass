@@ -84,7 +84,8 @@ class PlayfileRetrySemanticsTest {
                         didRepository, null, null),
                 authorizationService,
                 currentUserProvider, readinessService, tenantRepository,
-                runtimeConfigResolver, new RetryPolicyService(), dialService, eslEventProcessor);
+                runtimeConfigResolver, new RetryPolicyService(), dialService, eslEventProcessor,
+                org.mockito.Mockito.mock(StaleCallReconciler.class));
 
         campaign = new CampaignEntity();
         campaign.setId(CAMPAIGN_ID);

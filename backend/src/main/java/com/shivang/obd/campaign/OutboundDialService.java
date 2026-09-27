@@ -33,7 +33,6 @@ import com.shivang.obd.voice.capacity.VoiceCapacityService;
 import com.shivang.obd.voice.routing.RouteType;
 import com.shivang.obd.voice.routing.VoiceRoute;
 import com.shivang.obd.voice.routing.VoiceRoutingDecision;
-import com.shivang.obd.voice.routing.VoiceRoutingReason;
 import com.shivang.obd.voice.routing.VoiceRoutingService;
 
 import lombok.RequiredArgsConstructor;
@@ -79,6 +78,11 @@ public class OutboundDialService {
      * Consulted once per dispatch, immediately before the dial is issued.
      */
     private final DailyAttemptSafetyService dailyAttemptSafety;
+    /**
+     * VB-6E: maps pre-dispatch rejection reasons to canonical codes so they
+     * cannot be mistaken for dispatched contact outcomes.
+     */
+    private final PreDispatchFailureMapper preDispatchFailureMapper;
 
     /**
      * Processes all QUEUED attempts that are due for execution.
@@ -133,6 +137,19 @@ public class OutboundDialService {
                 .orElse(null);
         if (liveCampaign == null) {
             markFailed(attempt, "CAMPAIGN_NOT_FOUND", "Campaign no longer exists");
+            attemptRepository.save(attempt);
+            return true;
+        }
+
+        // VB-6E (PAUSED must actually pause): a paused campaign dispatches
+        // nothing new. Checked BEFORE any budget is touched, so pausing never
+        // consumes a VB-6C hold or a VB-6D.3 attempt and never produces a
+        // failure that could be mistaken for a contact outcome. The attempt
+        // stays QUEUED and keeps its attempt number, so it resumes naturally.
+        if (liveCampaign.getStatus() == CampaignStatus.PAUSED) {
+            log.info("Campaign {} is PAUSED - attempt {} not dispatched",
+                    liveCampaign.getId(), attemptId);
+            requeueAttempt(attempt);
             attemptRepository.save(attempt);
             return true;
         }
@@ -226,16 +243,22 @@ public class OutboundDialService {
             );
 
             if (routingDecision.selectedRoute() == null) {
-                // No route available - check if it's a capacity issue
+                // No route available. VB-6E: the reason is translated to a
+                // canonical PRE-DISPATCH code before it is persisted. Before
+                // this, the raw VoiceRoutingReason name was stored verbatim,
+                // canonicalized to HANGUP_UNKNOWN, classified as a HANGUP
+                // contact outcome, and therefore consumed campaign retry
+                // budget for a call that was never placed.
                 String reason = routingDecision.decisionReason();
                 log.info("Call attempt {} routing failed: {} - rejected routes: {}", attemptId, reason, routingDecision.rejectedRoutes().size());
-                if (VoiceRoutingReason.ROUTE_REJECTED_CHANNEL_CAPACITY.getCode().equals(reason)
-                        || VoiceRoutingReason.ROUTE_REJECTED_CPS_CAPACITY.getCode().equals(reason)
-                        || VoiceRoutingReason.ROUTE_REJECTED_CAPACITY_HEADROOM.getCode().equals(reason)) {
+                if (preDispatchFailureMapper.isCapacityReason(reason)) {
                     // Capacity issue - requeue without consuming retry
                     requeueAttempt(attempt);
                 } else {
-                    markFailed(attempt, reason, "Routing failed: " + reason);
+                    CallFailureCode preDispatch =
+                            preDispatchFailureMapper.toPreDispatchCode(reason);
+                    markFailed(attempt, preDispatch.name(),
+                            "Routing failed: " + reason);
                 }
                 attemptRepository.save(attempt);
                 return true;

@@ -61,12 +61,33 @@ public class FreeSwitchOutboundDialer implements OutboundDialer {
         try (EslClient eslClient = new EslClient(properties)) {
             eslClient.connect();
 
-            String uuid = eslClient.originate(request.callerId(), request.destinationNumber(), gatewayName, profile);
+            // VB-6E (audit finding P0.1-D): the channel UUID is chosen by us
+            // via FreeSWITCH's origination_uuid channel variable and is the
+            // CallAttempt's own id. This makes the provider call identity
+            // deterministic BEFORE the call is placed, so every subsequent ESL
+            // event correlates by Call-UUID with no race, no polling and no
+            // extra table. Pre-VB-6E this returned a bgapi Job-UUID, which is a
+            // background-task identifier and NOT a channel identity, so nothing
+            // could ever correlate.
+            String channelUuid = request.callAttemptId() == null
+                    ? null
+                    : request.callAttemptId().toString();
+            if (channelUuid == null || channelUuid.isBlank()) {
+                log.error("Call attempt id is required to pin the FreeSWITCH channel UUID");
+                return OutboundDialResponse.providerUnavailable();
+            }
 
-            log.info("FreeSWITCH originate accepted for attempt {} (providerCallId={})",
-                    request.callAttemptId(), uuid);
+            // Returns the CHANNEL uuid we pinned; the background job uuid is
+            // internal to the client and is only logged.
+            String channelUuidReturned = eslClient.originate(
+                    request.callerId(), request.destinationNumber(),
+                    gatewayName, profile, channelUuid);
 
-            return OutboundDialResponse.accepted(uuid);
+            log.info("FreeSWITCH originate accepted for attempt {} (channelUuid={})",
+                    request.callAttemptId(), channelUuidReturned);
+
+            // The provider call id is the CHANNEL uuid, which we pinned.
+            return OutboundDialResponse.accepted(channelUuidReturned);
 
         } catch (EslException e) {
             String message = e.getMessage();

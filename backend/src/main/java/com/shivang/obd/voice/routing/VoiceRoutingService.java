@@ -1,7 +1,9 @@
 package com.shivang.obd.voice.routing;
 
 import com.shivang.obd.did.DidEntity;
+import com.shivang.obd.did.AllocationState;
 import com.shivang.obd.did.DidRepository;
+import com.shivang.obd.did.DidStatus;
 import com.shivang.obd.voice.capacity.VoiceCapacityService;
 import com.shivang.obd.voice.eligibility.VoiceEligibility;
 import java.util.ArrayList;
@@ -88,7 +90,7 @@ public class VoiceRoutingService {
 
         // 4. Try primary routes
         var primaryDecision = tryRoutes(
-                profile.getPrimaryRoutes(),
+                profile.routesOfType(RouteType.PRIMARY),
                 tenantId,
                 resellerId,
                 did,
@@ -107,7 +109,7 @@ public class VoiceRoutingService {
         // 5. Try overflow routes (if auto overflow enabled)
         if (Boolean.TRUE.equals(profile.getAutoOverflowEnabled())) {
             var overflowDecision = tryRoutes(
-                    profile.getOverflowRoutes(),
+                    profile.routesOfType(RouteType.OVERFLOW),
                     tenantId,
                     resellerId,
                     did,
@@ -122,7 +124,7 @@ public class VoiceRoutingService {
             rejectedRoutes.addAll(overflowDecision.getRejected());
         } else {
             // Add overflow routes as rejected with policy reason
-            for (var entry : profile.getOverflowRoutes()) {
+            for (var entry : profile.routesOfType(RouteType.OVERFLOW)) {
                 if (entry.getEnabled()) {
                     rejectedRoutes.add(new RejectedRoute(
                             entry.getGatewayId(),
@@ -137,7 +139,7 @@ public class VoiceRoutingService {
         // 6. Try failover routes (if auto failover enabled)
         if (Boolean.TRUE.equals(profile.getAutoFailoverEnabled())) {
             var failoverDecision = tryRoutes(
-                    profile.getFailoverRoutes(),
+                    profile.routesOfType(RouteType.FAILOVER),
                     tenantId,
                     resellerId,
                     did,
@@ -152,7 +154,7 @@ public class VoiceRoutingService {
             rejectedRoutes.addAll(failoverDecision.getRejected());
         } else {
             // Add failover routes as rejected with policy reason
-            for (var entry : profile.getFailoverRoutes()) {
+            for (var entry : profile.routesOfType(RouteType.FAILOVER)) {
                 if (entry.getEnabled()) {
                     rejectedRoutes.add(new RejectedRoute(
                             entry.getGatewayId(),
@@ -278,7 +280,7 @@ public class VoiceRoutingService {
             // All checks passed - select this route
             VoiceRoute selectedRoute;
             try {
-                selectedRoute = buildVoiceRoute(gateway, entry.getDidId(), did);
+                selectedRoute = buildVoiceRoute(gateway, entry.getDidId(), did, tenantId);
             } catch (IllegalStateException e) {
                 // Profile DID incompatible with gateway
                 rejected.add(new RejectedRoute(gateway.id(), gateway.displayName(), routeType, VoiceRoutingReason.ROUTE_REJECTED_DID_INCOMPATIBLE.getCode()));
@@ -309,16 +311,36 @@ public class VoiceRoutingService {
      * <p>
      * If profile specifies a DID, it MUST be compatible with the gateway.
      * No silent fallback to campaign DID - incompatible profile DID = route rejection.
+     *
+     * <h2>VB-6E: a profile-pinned DID is validated, not trusted</h2>
+     *
+     * <p>Pre-VB-6E a pinned DID was filtered only by "row exists and is not
+     * soft-deleted" plus a provider-string match. The eligibility gate only ever
+     * saw the campaign's <em>requested</em> DID, so a routing profile could pin
+     * another tenant's assigned DID, or a pool DID with {@code tenant_id IS
+     * NULL}, and that value would be dialed as the caller ID — becoming both the
+     * CLI the subscriber sees and the VB-6C daily-dial-limit bucket key. Tenant
+     * isolation and compliance were effectively bypassed by a configuration row.
+     *
+     * <p>Ownership and usability are now checked with the same predicate the
+     * rest of the platform uses, scoped to the dialing tenant. A pinned DID that
+     * is foreign, inactive, or unassigned makes the route ineligible, which the
+     * caller surfaces as a pre-dispatch rejection — no dial, no budget spent.
      */
-    private VoiceRoute buildVoiceRoute(GatewayRouteView gateway, UUID profileDidId, DidEntity campaignDid) {
+    private VoiceRoute buildVoiceRoute(GatewayRouteView gateway, UUID profileDidId,
+                                       DidEntity campaignDid, UUID tenantId) {
         if (profileDidId != null) {
-            // Profile specifies a DID - MUST be compatible with gateway
-            return didRepository.findByIdAndDeletedAtIsNull(profileDidId)
+            // VB-6E: tenant-scoped ownership + ACTIVE + ASSIGNED, in one
+            // tenant-bounded query, before the provider compatibility check.
+            return didRepository
+                    .findByIdAndTenantIdAndDeletedAtIsNullAndStatusAndAllocationState(
+                            profileDidId, tenantId, DidStatus.ACTIVE, AllocationState.ASSIGNED)
                     .filter(d -> isCompatible(d.getProvider(), gateway))
                     .map(d -> new VoiceRoute(gateway.id(), gateway.freeSwitchGatewayName(),
                             gateway.freeSwitchProfile(), gateway.provider(), d.getId(), d.getE164Number()))
                     .orElseThrow(() -> new IllegalStateException(
-                            "Profile DID " + profileDidId + " is incompatible with gateway " + gateway.id()));
+                            "Profile DID " + profileDidId + " is not a usable DID of tenant "
+                                    + tenantId + " for gateway " + gateway.id()));
         }
         // No profile DID specified - use campaign's DID (already validated for compatibility)
         return new VoiceRoute(gateway.id(), gateway.freeSwitchGatewayName(),

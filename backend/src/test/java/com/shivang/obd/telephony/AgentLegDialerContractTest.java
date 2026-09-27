@@ -192,12 +192,19 @@ class AgentLegDialerContractTest {
         props.setPassword("ClueCon");
         EslClient client = new EslClient(props);
 
-        // Inject faked socket streams — a real ESL connection is not needed to
-        // assert the command/response contract.
+        // VB-6E: the injected frames are now REAL ESL frames. Pre-VB-6E this
+        // test fed the client the fabricated text "+OK accepted\n\n", which is
+        // not anything FreeSWITCH sends: a real reply is a header block
+        // terminated by a blank line, with the verdict in the Reply-Text header.
+        // That fabricated frame is precisely why the old client's verdict
+        // parsing was never exercised — and why it was wrong. Genuine frames
+        // are used throughout EslProtocolTest, over a real socket.
         var out = new java.io.ByteArrayOutputStream();
         var writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(out), true);
         var reader = new java.io.BufferedReader(new java.io.InputStreamReader(
-                new java.io.ByteArrayInputStream("+OK accepted\n\n".getBytes())));
+                new java.io.ByteArrayInputStream(
+                        "Content-Type: command/reply\nReply-Text: +OK accepted\n\n"
+                                .getBytes())));
         org.springframework.test.util.ReflectionTestUtils.setField(client, "authenticated", true);
         org.springframework.test.util.ReflectionTestUtils.setField(client, "writer", writer);
         org.springframework.test.util.ReflectionTestUtils.setField(client, "reader", reader);
@@ -206,12 +213,15 @@ class AgentLegDialerContractTest {
 
         assertThat(out.toString()).contains("uuid_bridge caller-uuid agent-uuid");
 
-        // Error path: -ERR must raise EslException.
+        // Error path: a real -ERR reply must raise EslException.
         var readerErr = new java.io.BufferedReader(new java.io.InputStreamReader(
-                new java.io.ByteArrayInputStream("-ERR NO_ANSWER\n\n".getBytes())));
+                new java.io.ByteArrayInputStream(
+                        "Content-Type: command/reply\nReply-Text: -ERR NO_ANSWER\n\n"
+                                .getBytes())));
         org.springframework.test.util.ReflectionTestUtils.setField(client, "reader", readerErr);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> client.bridge("a", "b"))
                 .isInstanceOf(EslException.class)
-                .hasMessageContaining("bridge");
+                .hasMessageContaining("bridge")
+                .hasMessageContaining("NO_ANSWER");
     }
 }

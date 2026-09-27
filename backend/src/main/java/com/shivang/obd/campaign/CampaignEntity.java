@@ -158,4 +158,18 @@ private Integer dailyDialLimit;
  */
 @Column(name = "max_daily_attempts")
 private Integer maxDailyAttempts;
+
+    /**
+     * Optional maximum lifetime of an ESTABLISHED outbound call, in seconds
+     * (VB-6E). Null means the platform default of
+     * {@link MaxCallDurationPolicy#DEFAULT_MAX_CALL_DURATION_SECONDS} (300s).
+     *
+     * <p>Explicitly not a ring timeout, a provider connection timeout, or a
+     * playback length - it bounds the active call session from the moment the
+     * provider reports answer. Execution-affecting configuration: frozen into
+     * the immutable execution snapshot, so a later campaign edit cannot
+     * lengthen or shorten a running execution's call duration.
+     */
+    @Column(name = "max_call_duration_seconds")
+    private Integer maxCallDurationSeconds;
 }

@@ -175,7 +175,8 @@ class DialBatchContinuationPostgresIntegrationTest {
                 dialer, eligibilityService, voiceRoutingService, voiceCapacity,
                 callSessionRepository, callLegRepository,
                 // VB-6C.1: real policy service over the real ledger tables.
-                dailyDialLimitService, dailyAttemptSafetyService);
+                dailyDialLimitService, dailyAttemptSafetyService,
+                new PreDispatchFailureMapper());
     }
 
     /** Seeds tenant, campaign, snapshot (group+DID refs), execution; returns group id. */

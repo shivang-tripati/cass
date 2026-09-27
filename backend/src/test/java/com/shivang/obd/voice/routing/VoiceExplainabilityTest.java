@@ -81,7 +81,18 @@ class VoiceExplainabilityTest {
     private void stubDid() {
         DidEntity d = did(DID, TENANT, "TATA");
         when(didRepository.findByIdAndDeletedAtIsNull(DID)).thenReturn(Optional.of(d));
-    }
+
+        // VB-6E: a profile-pinned DID must pass the tenant-scoped ownership,
+        // ACTIVE and ASSIGNED gate before it may be dialed as the caller ID.
+        // The pre-VB-6E lookup was unscoped, which let a foreign or pool DID be
+        // used. This stub expresses the new contract; the refusal cases are
+        // covered by VoiceRoutingPinnedDidOwnershipTest.
+        when(didRepository.findByIdAndTenantIdAndDeletedAtIsNullAndStatusAndAllocationState(
+                org.mockito.ArgumentMatchers.eq(DID),
+                org.mockito.ArgumentMatchers.eq(TENANT),
+                org.mockito.ArgumentMatchers.eq(com.shivang.obd.did.DidStatus.ACTIVE),
+                org.mockito.ArgumentMatchers.eq(com.shivang.obd.did.AllocationState.ASSIGNED)))
+                .thenReturn(Optional.of(d));    }
 
     @Test
     void decision_exposesSelectedRouteTypeReasonAndRejectedAlternativesWithGatewayIds() {

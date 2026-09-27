@@ -74,6 +74,11 @@ public class CampaignExecutionOrchestrator {
     private final RetryPolicyService retryPolicyService;
     private final OutboundDialService dialService;
     private final EslEventProcessor eslEventProcessor;
+    /**
+     * VB-6E: maximum call duration enforcement and stranded-attempt
+     * recovery. Runs on this tick; not a separate scheduler.
+     */
+    private final StaleCallReconciler staleCallReconciler;
 
     // Terminal attempt statuses
     private static final Set<CallAttemptStatus> TERMINAL_ATTEMPT_STATUSES = Set.of(
@@ -83,9 +88,14 @@ public class CampaignExecutionOrchestrator {
     );
 
     /**
-     * Starts a campaign execution if it is in REQUESTED state.
+     * Starts a campaign execution if it is in REQUESTED state, on behalf of an
+     * interactive caller.
      * <p>
-     * This is the main entry point for the execution engine.
+     * Unchanged VB-6E behaviour: the caller's identity comes from the request
+     * security context and the {@code CAMPAIGN_EXECUTE} capability is enforced
+     * against the execution's tenant. User-triggered execution is therefore
+     * exactly as it was.
+     * <p>
      * Safe to call repeatedly — idempotent by design.
      *
      * @param executionId the execution to start
@@ -95,9 +105,64 @@ public class CampaignExecutionOrchestrator {
     public boolean startExecution(UUID executionId) {
         UUID userId = requireUserId();
         CampaignExecution execution = findVisibleExecution(executionId, currentScope());
-        UUID tenantId = execution.getTenantId();
+        authorizationService.requireCapability(userId, CAP_EXECUTE,
+            AccessCheck.forTenant(execution.getTenantId()));
+        return doStartExecution(execution);
+    }
 
-        authorizationService.requireCapability(userId, CAP_EXECUTE, AccessCheck.forTenant(tenantId));
+    /**
+     * Starts a campaign execution from the scheduler, with no interactive user
+     * (VB-6E).
+     *
+     * <h2>Why this exists</h2>
+     *
+     * <p>Pre-VB-6E the scheduler's only way to start an execution was
+     * {@link #startExecution(UUID)}, whose first statement was
+     * {@code requireUserId()}. That reads {@code SecurityContextHolder}, which
+     * nothing in the application populates outside a servlet request and which
+     * is always empty on a scheduler thread. The result was
+     * {@code BusinessException(UNAUTHORIZED)} on <em>every</em> tick, so an
+     * execution requested through the REST API never started.
+     *
+     * <h2>How identity is established instead</h2>
+     *
+     * <p>Not by fabricating a user. The execution row is the authority: it
+     * carries the {@code tenantId} captured when the execution was requested
+     * through the authenticated API, and {@code requestedBy} records who asked.
+     * So the tenant boundary is known without any security context, and:
+     *
+     * <ul>
+     *   <li>the campaign is re-read with {@code (campaignId, execution.tenantId)},
+     *       so a foreign campaign is not found — isolation is enforced;</li>
+     *   <li>readiness uses the same rules the interactive path uses
+     *       ({@code evaluateForSystem}), so nothing becomes startable that an
+     *       interactive start would refuse;</li>
+     *   <li>no {@code SecurityContextHolder} is set, so there is no thread-local
+     *       authentication to leak to any other work on the scheduler
+     *       thread;</li>
+     *   <li>{@link #startExecution(UUID)} is untouched, so the interactive path
+     *       and its capability check are unchanged.</li>
+     * </ul>
+     */
+    @Transactional
+    public boolean startExecutionAsSystem(UUID executionId) {
+        CampaignExecution execution = executionRepository
+            .findByIdAndDeletedAtIsNull(executionId)
+            .orElse(null);
+        if (execution == null) {
+            log.debug("Scheduled start: execution {} not found", executionId);
+            return false;
+        }
+        return doStartExecution(execution);
+    }
+
+    /**
+     * The shared, actor-agnostic start logic. Both the interactive and the
+     * scheduled entry point converge here, so the two can never diverge in what
+     * they consider startable.
+     */
+    private boolean doStartExecution(CampaignExecution execution) {
+        UUID executionId = execution.getId();
 
         // Only process REQUESTED executions
         if (execution.getStatus() != CampaignExecutionStatus.REQUESTED) {
@@ -106,15 +171,29 @@ public class CampaignExecutionOrchestrator {
             return false;
         }
 
-        // Reload campaign and re-check readiness
+        UUID tenantId = execution.getTenantId();
+
+        // Reload campaign within the execution's own tenant. Never widened to a
+        // caller scope: the execution row is the authority.
         CampaignEntity campaign = campaignRepository.findByIdAndTenantIdAndDeletedAtIsNull(
             execution.getCampaignId(), tenantId)
             .orElseThrow(() -> new BusinessException(
                 CommonErrorCode.VALIDATION_ERROR, "Campaign no longer exists"));
 
-        CampaignReadinessResponse readiness = readinessService.evaluate(campaign.getId());
+        CampaignReadinessResponse readiness = readinessService
+            .evaluateForSystem(campaign.getId(), tenantId);
         if (!readiness.ready()) {
-            log.warn("Campaign {} no longer ready: {}", campaign.getId(), formatReasons(readiness.reasons()));
+            log.warn("Campaign {} not ready: {}", campaign.getId(), formatReasons(readiness.reasons()));
+            // VB-6E: a campaign that is merely PAUSED (or SCHEDULED for later)
+            // must NOT have its pending execution destroyed. Only a genuinely
+            // unrunnable campaign fails here; a non-executable lifecycle state
+            // leaves the execution REQUESTED so the scheduler retries it when
+            // the campaign becomes executable again.
+            if (isDeferredRatherThanFailed(readiness.reasons())) {
+                log.info("Execution {} deferred: campaign {} is not executable yet ({})",
+                    executionId, campaign.getId(), formatReasons(readiness.reasons()));
+                return false;
+            }
             execution.setStatus(CampaignExecutionStatus.FAILED);
             execution.setCompletedAt(Instant.now());
             execution.setFailureReason("Campaign not ready: " + formatReasons(readiness.reasons()));
@@ -369,38 +448,68 @@ public class CampaignExecutionOrchestrator {
 
     /**
      * Scheduled entry point — processes due attempts and retries.
-     * <p>
-     * Runs every 30 seconds. The actual interval can be configured via
-     * spring.scheduling.cron if needed.
+     *
+     * <h2>VB-6E: per-step failure isolation</h2>
+     *
+     * <p>Pre-VB-6E this method wrapped all five steps in a single
+     * {@code try/catch}. Because step 1 could always throw (it required an
+     * interactive user), one failure silently disabled retries, dialing, the
+     * ESL pump and reconciliation for the whole cycle — every 30 seconds, with
+     * nothing but a log line. Each step is now isolated: a step that throws is
+     * logged with its identity and the remaining steps still run.
+     *
+     * <h2>VB-6E: transaction boundary</h2>
+     *
+     * <p>The method itself is deliberately <b>not</b> {@code @Transactional}.
+     * Each step owns its transaction (they are invoked through the Spring
+     * proxy, or are themselves transactional), so one step's rollback cannot
+     * discard another's work — and, critically, the tick no longer holds a
+     * transaction open across outbound network I/O.
+     *
+     * <p>The cadence (30 s) and the single scheduler are unchanged; this is not
+     * a new scheduler.
      */
     @Scheduled(fixedDelay = 30000)
-    @Transactional
     public void scheduledTick() {
-        try {
-            // 1. Start any REQUESTED executions that are now ready
+        runStep("start-requested-executions", () -> {
             List<CampaignExecution> requested = executionRepository
                 .findByStatusAndDeletedAtIsNull(CampaignExecutionStatus.REQUESTED);
             for (CampaignExecution ex : requested) {
-                startExecution(ex.getId());
+                startExecutionAsSystem(ex.getId());
             }
+        });
 
-            // 2. Process retries for RUNNING executions
-            processRetries();
+        runStep("process-retries", () -> processRetries());
 
-            // 3. Dial due QUEUED attempts
-            dialService.processDueAttempts();
+        runStep("dial-due-attempts", () -> dialService.processDueAttempts());
 
-            // 4. Ensure ESL event processing is running
-            eslEventProcessor.ensureEventProcessing();
+        runStep("pump-esl-events", () -> eslEventProcessor.ensureEventProcessing());
 
-            // 5. Reconcile RUNNING executions
+        runStep("reconcile-executions", () -> {
             List<CampaignExecution> running = executionRepository
                 .findByStatusAndDeletedAtIsNull(CampaignExecutionStatus.RUNNING);
             for (CampaignExecution ex : running) {
                 reconcileExecution(ex.getId());
             }
-        } catch (Exception e) {
-            log.error("Error in scheduled orchestration tick", e);
+        });
+
+        // VB-6E: stale-attempt/stale-session reconciliation runs on the SAME
+        // tick, after the other steps, so it never competes with dispatch for
+        // the rows it inspects. Not a new scheduler.
+        runStep("reconcile-stale-calls", staleCallReconciler::reconcile);
+    }
+
+    /**
+     * Runs one tick step inside its own failure boundary.
+     *
+     * <p>Failures are logged, never silently swallowed, and never allowed to
+     * prevent a later step from running. The scheduler thread always survives.
+     */
+    private void runStep(String name, Runnable step) {
+        try {
+            step.run();
+        } catch (RuntimeException e) {
+            log.error("Scheduled step '{}' failed; continuing with the remaining steps", name, e);
         }
     }
 
@@ -518,6 +627,29 @@ public class CampaignExecutionOrchestrator {
 
     private boolean isDidStillValid(UUID didId, UUID tenantId) {
         return resourceValidator.validateDid(didId, tenantId).usable();
+    }
+
+    /**
+     * Whether a readiness failure should leave the execution {@code REQUESTED}
+     * for a later attempt rather than failing it (VB-6E).
+     *
+     * <p>Pre-VB-6E, <em>any</em> not-ready result failed the execution
+     * immediately. That made a {@code PAUSED} campaign destroy its own pending
+     * work, and there is no path from {@code PAUSED} back to {@code REQUESTED},
+     * so the execution could never be recovered — pausing was not merely
+     * cosmetic, it was destructive.
+     *
+     * <p>A lifecycle-state reason is transient and time-dependent: the campaign
+     * may become executable again on its own (un-paused, or scheduled). A
+     * configuration or resource reason is not: a missing audio approval or an
+     * invalid DID will still be true on the next tick, and silently retrying it
+     * forever would be a hot loop against the database.
+     *
+     * <p>So the split is by reason kind, not by optimism.
+     */
+    private boolean isDeferredRatherThanFailed(List<CampaignReadinessReason> reasons) {
+        return reasons.stream().anyMatch(r ->
+                "CAMPAIGN_NOT_EXECUTABLE_STATE".equals(r.code()));
     }
 
     private String formatReasons(List<CampaignReadinessReason> reasons) {

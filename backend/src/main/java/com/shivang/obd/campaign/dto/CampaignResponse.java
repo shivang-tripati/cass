@@ -52,7 +52,21 @@ public record CampaignResponse(
         + "dailyDialLimit, which caps provider-ACCEPTED dials per contact per actual "
         + "DNID at 3.",
         minimum = "1", maximum = "10", example = "4")
-    Integer maxDailyAttempts
+    Integer maxDailyAttempts,
+
+    /**
+     * VB-6E: configured maximum lifetime of an established outbound call, in
+     * seconds; null means the platform default of 300s is in effect. Bounded
+     * from answer, not a ring timeout and not a playback length.
+     */
+    @Schema(description = "Configured maximum lifetime of an ESTABLISHED outbound call in "
+        + "seconds (1-3600), measured from the moment the provider reported answer. Null means "
+        + "the platform default of 300 seconds is in effect. Not a ring timeout, not a provider "
+        + "connection timeout and not a playback length. Exceeding it terminates the session and "
+        + "fails the attempt with MAX_DURATION_EXCEEDED, which the campaign retry policy may "
+        + "govern because the subscriber was genuinely called.",
+        minimum = "1", maximum = "3600", example = "180")
+    Integer maxCallDurationSeconds
 ) {
 
     /**
@@ -86,6 +100,43 @@ public record CampaignResponse(
         this(id, tenantId, name, description, campaignType, runMode, status, version,
                 clonedFromCampaignId, contactGroupId, didId, contentMode, audioAssetId,
                 ttsTemplateId, schedule, retryPolicy, typeConfig, integrationConfig,
-                createdAt, updatedAt, callOnWhitelistNumbers, dailyDialLimit, null);
+                createdAt, updatedAt, callOnWhitelistNumbers, dailyDialLimit, null, null);
+    }
+
+    /**
+     * The pre-VB-6E shape: no maximum call duration, so the platform default
+     * of 300 seconds is what a campaign built this way is running under.
+     * Retained so existing construction sites keep their exact previous
+     * meaning.
+     */
+    public CampaignResponse(
+            UUID id,
+            UUID tenantId,
+            String name,
+            String description,
+            CampaignType campaignType,
+            CampaignRunMode runMode,
+            CampaignStatus status,
+            Integer version,
+            UUID clonedFromCampaignId,
+            UUID contactGroupId,
+            UUID didId,
+            ContentMode contentMode,
+            UUID audioAssetId,
+            UUID ttsTemplateId,
+            ScheduleConfig schedule,
+            RetryPolicyConfig retryPolicy,
+            JsonNode typeConfig,
+            JsonNode integrationConfig,
+            Instant createdAt,
+            Instant updatedAt,
+            Boolean callOnWhitelistNumbers,
+            Integer dailyDialLimit,
+            Integer maxDailyAttempts) {
+        this(id, tenantId, name, description, campaignType, runMode, status, version,
+                clonedFromCampaignId, contactGroupId, didId, contentMode, audioAssetId,
+                ttsTemplateId, schedule, retryPolicy, typeConfig, integrationConfig,
+                createdAt, updatedAt, callOnWhitelistNumbers, dailyDialLimit, maxDailyAttempts,
+                null);
     }
 }

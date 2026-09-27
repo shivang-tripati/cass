@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -49,7 +50,14 @@ import org.springframework.transaction.annotation.Transactional;
  */
 class PlayfileLifecycleIntegrationTest extends VoicePostgresIntegrationSupport {
 
-    private static final String AUDIO_REF = "tenants/it/it-promo.wav";
+    /**
+     * VB-6E: the media path the resolver produces for the seeded asset. The
+     * seeded storage reference is the canonical shape
+     * {@code audio/{tenant}/{asset}/{file}}, and the reference is built from the
+     * asset's own ids in insertAudioAsset, so the expected path is computed
+     * from the same values rather than hard-coded.
+     */
+    private static final String MEDIA_ROOT = "/usr/share/freeswitch/sounds";
 
     @Autowired
     private CallAttemptRepository attemptRepository;
@@ -93,6 +101,10 @@ class PlayfileLifecycleIntegrationTest extends VoicePostgresIntegrationSupport {
                         new com.shivang.obd.campaign.CampaignConfigurationService(
                                 configVersionRepository,
                                 new com.shivang.obd.campaign.config.CampaignTypeConfigValidator())),
+                // VB-6E: the real media URI resolver, so the translation from a
+                // logical storage reference to a FreeSWITCH-readable path is
+                // genuinely exercised rather than stubbed.
+                mediaUriResolver(),
                 mediaController);
 
         eslEventService = new EslEventService(
@@ -156,7 +168,9 @@ class PlayfileLifecycleIntegrationTest extends VoicePostgresIntegrationSupport {
                         + "VALUES (?, ?, 'it-asset', 'promo.wav', 'audio/wav', 1024, ?, 'APPROVED')")) {
             ps.setObject(1, id);
             ps.setObject(2, ownerTenantId);
-            ps.setString(3, AUDIO_REF);
+            // VB-6E: canonical logical reference, naming this asset and its
+            // owner. The resolver will refuse anything that is not this shape.
+            ps.setString(3, "audio/" + ownerTenantId + "/" + id + "/promo.wav");
             ps.executeUpdate();
         }
     }
@@ -293,7 +307,7 @@ class PlayfileLifecycleIntegrationTest extends VoicePostgresIntegrationSupport {
         // The real PlayfileExecutionService resolved the PLAYFILE campaign and
         // the tenant-owned APPROVED asset from the database, then requested
         // playback through the media boundary.
-        verify(mediaController).playAudio(any(UUID.class), any(), eq(AUDIO_REF));
+        verify(mediaController).playAudio(any(UUID.class), any(), startsWith(MEDIA_ROOT));
 
         eslEventService.processEvent(event("PLAYBACK_START", callUuid));
         eslEventService.processEvent(event("PLAYBACK_STOP", callUuid));
@@ -355,5 +369,12 @@ class PlayfileLifecycleIntegrationTest extends VoicePostgresIntegrationSupport {
         assertThat(attempt.getStatus()).isEqualTo(com.shivang.obd.campaign.CallAttemptStatus.FAILED);
         assertThat(attempt.getFailureCode()).isEqualTo("PLAYBACK_CONFIG_INVALID");
         assertThat(activeReservations(gatewayId)).isZero();
+    }
+    private static com.shivang.obd.audio.MediaUriResolver mediaUriResolver() {
+        com.shivang.obd.audio.AudioStorageProperties properties =
+                new com.shivang.obd.audio.AudioStorageProperties();
+        properties.setEnabled(true);
+        properties.setFreeswitchMediaRoot(MEDIA_ROOT);
+        return new com.shivang.obd.audio.MediaUriResolver(properties);
     }
 }

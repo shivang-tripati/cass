@@ -285,4 +285,63 @@ class CampaignOpenApiContractTest {
         assertThat(create.at("/properties/maxDailyAttempts/maximum").asInt())
                 .isEqualTo(DailyAttemptSafetyService.MAX_DAILY_ATTEMPTS_PER_CONTACT);
     }
+
+    // === VB-6E: maximum call duration documentation ===
+
+    @Test
+    @DisplayName("OAS-F1: maxCallDurationSeconds is documented on create/update/response")
+    void maxCallDurationExposedOnAllCampaignSchemas() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        for (String dto : new String[] {"CreateCampaignRequest", "UpdateCampaignRequest",
+                "CampaignResponse"}) {
+            JsonNode field = schema(spec, dto).at("/properties/maxCallDurationSeconds");
+            assertThat(field.isMissingNode())
+                    .as("%s must document maxCallDurationSeconds", dto)
+                    .isFalse();
+            assertThat(field.at("/type").asText()).isEqualTo("integer");
+            assertThat(field.at("/minimum").asInt())
+                    .isEqualTo(MaxCallDurationPolicy.MIN_MAX_CALL_DURATION_SECONDS);
+            assertThat(field.at("/maximum").asInt())
+                    .isEqualTo(MaxCallDurationPolicy.MAX_MAX_CALL_DURATION_SECONDS);
+        }
+    }
+
+    @Test
+    @DisplayName("OAS-F2: the description states the default and disambiguates the three timeouts")
+    void maxCallDurationDescriptionIsUnambiguous() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        String description = schema(spec, "CreateCampaignRequest")
+                .at("/properties/maxCallDurationSeconds/description").asText();
+
+        // The dangerous misreading is confusing this with a ring timeout, a
+        // provider connection timeout, or the audio length. The description has
+        // to rule all three out explicitly.
+        assertThat(description)
+                .contains("ESTABLISHED")
+                .contains("300")
+                .contains("ring timeout")
+                .contains("connection timeout")
+                .contains("playback length");
+
+        // Null means the platform default, and the field is optional.
+        assertThat(schema(spec, "CreateCampaignRequest").path("required").toString())
+                .doesNotContain("maxCallDurationSeconds");
+    }
+
+    @Test
+    @DisplayName("OAS-F3: all three call-timing ceilings coexist on the create schema")
+    void allCallTimingFieldsCoexist() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        JsonNode create = schema(spec, "CreateCampaignRequest");
+
+        // The three VB-6C/VB-6D/VB-6E daily or duration controls must be
+        // independently documented so a client cannot confuse them.
+        assertThat(create.at("/properties/dailyDialLimit").isMissingNode()).isFalse();
+        assertThat(create.at("/properties/maxDailyAttempts").isMissingNode()).isFalse();
+        assertThat(create.at("/properties/maxCallDurationSeconds").isMissingNode()).isFalse();
+
+        assertThat(create.at("/properties/dailyDialLimit/maximum").asInt()).isEqualTo(3);
+        assertThat(create.at("/properties/maxDailyAttempts/maximum").asInt()).isEqualTo(10);
+        assertThat(create.at("/properties/maxCallDurationSeconds/maximum").asInt()).isEqualTo(3600);
+    }
 }

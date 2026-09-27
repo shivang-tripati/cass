@@ -125,6 +125,11 @@ public class CampaignConfigurationService {
                 // a running execution's attempt budget. Null means the
                 // platform default.
                 campaign.getMaxDailyAttempts(),
+                // VB-6E: the maximum call duration is frozen here too. A call
+                // already in flight must not be lengthened or shortened by an
+                // edit made after the execution was created. Null preserves
+                // platform-default semantics.
+                campaign.getMaxCallDurationSeconds(),
                 // Canonical validated JSON (compatibility codec output).
                 validatedTypeConfig.toJson(),
                 Boolean.TRUE.equals(campaign.getCallOnWhitelistNumbers()),

@@ -123,6 +123,15 @@ public class CampaignConfigurationSnapshot {
     @Column(name = "max_daily_attempts")
     private Integer maxDailyAttempts;
 
+    /**
+     * VB-6E: the campaign's configured maximum call duration in seconds,
+     * frozen at snapshot creation. Null means the platform default of 300s.
+     * Frozen for the same reason as every other execution-affecting field: a
+     * later campaign edit must not change a running execution's call budget.
+     */
+    @Column(name = "max_call_duration_seconds")
+    private Integer maxCallDurationSeconds;
+
     // === Type-specific and integration configuration ===
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -171,7 +180,7 @@ public class CampaignConfigurationSnapshot {
         this(campaignType, contactGroupId, didId, contentMode, audioAssetId, ttsTemplateId,
                 scheduleStartDate, scheduleEndDate, dailyStartTime, dailyEndTime, timezone,
                 allowedDaysOfWeek, holidayCalendarId, retryMaxAttempts, retryIntervalSeconds,
-                retryStrategy, null, null, typeConfig, callOnWhitelistNumbers, dailyDialLimit);
+                retryStrategy, null, null, null, typeConfig, callOnWhitelistNumbers, dailyDialLimit);
     }
 
     /**

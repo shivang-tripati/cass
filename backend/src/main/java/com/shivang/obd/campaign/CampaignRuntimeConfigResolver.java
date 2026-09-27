@@ -70,7 +70,13 @@ public class CampaignRuntimeConfigResolver {
              * DNID-agnostic dispatches shared across every Voice Blast
              * campaign of the tenant for that contact-day.
              */
-            Integer maxDailyAttempts) {
+            Integer maxDailyAttempts,
+            /**
+             * VB-6E: frozen maximum call duration in seconds; null = platform
+             * default of 300s. Bounds the active call session, not a ring
+             * timeout and not a playback length.
+             */
+            Integer maxCallDurationSeconds) {
 
         /**
          * The pre-VB-6D.3 shape: no daily-attempt override, so the platform
@@ -93,7 +99,7 @@ public class CampaignRuntimeConfigResolver {
                 Integer dailyDialLimit) {
             this(campaignId, campaignType, contactGroupId, didId, contentMode, audioAssetId,
                     ttsTemplateId, callOnWhitelistNumbers, retryPolicy, schedule,
-                    typeConfigSchemaVersion, typeConfig, dailyDialLimit, null);
+                    typeConfigSchemaVersion, typeConfig, dailyDialLimit, null, null);
         }
 
         static CampaignRuntimeConfig fromSnapshot(
@@ -113,7 +119,8 @@ public class CampaignRuntimeConfigResolver {
                     com.shivang.obd.campaign.config.ConfigSchemaVersion.V1,
                     parseTypeConfig(s.getCampaignType(), s.getTypeConfig()),
                     s.getDailyDialLimit(),
-                    s.getMaxDailyAttempts());
+                    s.getMaxDailyAttempts(),
+                    s.getMaxCallDurationSeconds());
         }
 
         private static CampaignTypeConfig parseTypeConfig(

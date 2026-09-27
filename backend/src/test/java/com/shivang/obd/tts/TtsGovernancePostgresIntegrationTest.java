@@ -248,14 +248,27 @@ class TtsGovernancePostgresIntegrationTest {
 
     private com.shivang.obd.campaign.dto.CreateCampaignRequest ttsCampaignRequest(
         UUID groupId, UUID templateId) {
+        // VB-6E (OD-B): this suite tests the TTS *resource* governance gate —
+        // the write-time check and the activation re-check — so it must use a
+        // campaign type that legally accepts TTS content. PLAYFILE no longer
+        // can: TTS synthesis is not implemented, so PLAYFILE + TTS is refused at
+        // configuration time (asserted in
+        // CampaignResourceValidationPostgresIntegrationTest). CONNECT_BY_AGENT
+        // still accepts TTS, which keeps the governance rules under test
+        // exactly where they were.
         return new com.shivang.obd.campaign.dto.CreateCampaignRequest(
-            "c-campaign-" + SEQ.incrementAndGet(), null, CampaignType.PLAYFILE, null,
+            "c-campaign-" + SEQ.incrementAndGet(), null, CampaignType.CONNECT_BY_AGENT, null,
             groupId, null, ContentMode.TTS, null, templateId,
             new com.shivang.obd.campaign.dto.ScheduleConfig(
                 java.time.LocalDate.now().plusDays(1), java.time.LocalDate.now().plusDays(2),
                 java.time.LocalTime.of(10, 0), java.time.LocalTime.of(18, 0),
                 "Asia/Kolkata", null, null),
-            null, null, null, true, null);
+            null,
+            // CONNECT_BY_AGENT requires a NON-EMPTY typeConfig object; an empty
+            // object node would itself be rejected as missing configuration.
+            tools.jackson.databind.node.JsonNodeFactory.instance.objectNode()
+                    .put("connectTimeoutSecs", 30),
+            null, true, null);
     }
 
     // === M. migration + constraints (DB-level invariants) ===

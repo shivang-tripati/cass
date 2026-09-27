@@ -63,7 +63,45 @@ public class CampaignReadinessService {
         UUID userId = requireUserId();
         CampaignEntity campaign = findVisible(campaignId, currentScope());
         authorizationService.requireCapability(userId, CAP_VIEW, AccessCheck.forTenant(campaign.getTenantId()));
+        return evaluateResolved(campaign);
+    }
 
+    /**
+     * Readiness evaluation for a scheduled (non-interactive) caller (VB-6E).
+     *
+     * <p>The scheduler has no authenticated user, and
+     * {@link #evaluate(UUID)} exists to answer "may <em>this caller</em> see and
+     * run this campaign". A scheduled start is a different question: the
+     * execution row already carries an authoritative {@code tenantId}, written
+     * when the execution was requested through the authenticated API, so the
+     * tenant boundary is known without any user context.
+     *
+     * <p>This is deliberately narrow:
+     * <ul>
+     *   <li>the campaign is loaded by {@code (campaignId, tenantId)}, so a
+     *       foreign campaign is simply not found — tenant isolation is
+     *       <em>enforced</em> here, not relaxed;</li>
+     *   <li>no user capability is consulted, because there is no user: a
+     *       capability check against a fabricated user id would be theatre, and
+     *       the interactive path is unchanged and still checked;</li>
+     *   <li>the readiness rules themselves are exactly the same
+     *       {@link #evaluateResolved} computation, so a scheduled start cannot
+     *       pass something an interactive start would refuse.</li>
+     * </ul>
+     */
+    @Transactional(readOnly = true)
+    public CampaignReadinessResponse evaluateForSystem(UUID campaignId, UUID tenantId) {
+        CampaignEntity campaign = repository
+                .findByIdAndTenantIdAndDeletedAtIsNull(campaignId, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Campaign not found"));
+        return evaluateResolved(campaign);
+    }
+
+    /**
+     * The readiness rules, independent of who is asking. Shared verbatim by the
+     * interactive and scheduled entry points so the two can never diverge.
+     */
+    private CampaignReadinessResponse evaluateResolved(CampaignEntity campaign) {
         List<CampaignReadinessReason> reasons = new ArrayList<>();
 
         // 1. Lifecycle state check

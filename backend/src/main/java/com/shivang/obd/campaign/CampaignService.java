@@ -135,6 +135,8 @@ public class CampaignService {
         // ceiling. DTO validation covers the REST path; this guards entities
         // built outside it; the V51 CHECK is the last line of defense.
         DailyAttemptSafetyService.assertConfigurable(request.maxDailyAttempts());
+        // VB-6E: canonical domain rule for the maximum call duration.
+        MaxCallDurationPolicy.assertConfigurable(request.maxCallDurationSeconds());
 
         CampaignEntity entity = mapper.toEntity(request, tenantId);
         CampaignEntity saved = repository.save(entity);
@@ -219,6 +221,8 @@ public class CampaignService {
         // ceiling. DTO validation covers the REST path; this guards entities
         // built outside it; the V51 CHECK is the last line of defense.
         DailyAttemptSafetyService.assertConfigurable(request.maxDailyAttempts());
+        // VB-6E: canonical domain rule for the maximum call duration.
+        MaxCallDurationPolicy.assertConfigurable(request.maxCallDurationSeconds());
 
         mapper.updateEntity(entity, request);
         CampaignEntity saved = repository.save(entity);
@@ -389,6 +393,23 @@ public class CampaignService {
     ) {
         boolean hasAudio = audioAssetId != null;
         boolean hasTemplate = ttsTemplateId != null;
+
+        // VB-6E (OD-B): TTS is a governed RESOURCE but there is no TTS
+        // synthesis/playback runtime. Before VB-6E a PLAYFILE campaign could be
+        // created with contentMode=TTS, pass write-time validation, pass
+        // readiness, be scheduled, activated and executed - and then fail EVERY
+        // call with PLAYBACK_CONFIG_INVALID, because the PLAYFILE service
+        // only knows how to play an audio asset. That is a configuration an
+        // operator can build, approve and watch fail 100% of the time, with no
+        // way to find out short of reading logs. It is now rejected at
+        // configuration time so a campaign can never be created in a state that
+        // is guaranteed to fail. TTS playback is a future phase.
+        if (type == CampaignType.PLAYFILE && mode == ContentMode.TTS) {
+            throw business("PLAYFILE campaigns do not support TTS content yet; "
+                + "configure an approved audio asset with content mode AUDIO. "
+                + "TTS playback is not implemented.");
+        }
+
         if (mode == ContentMode.AUDIO) {
             if (!hasAudio || hasTemplate) {
                 throw business("AUDIO content requires exactly one audio asset reference.");

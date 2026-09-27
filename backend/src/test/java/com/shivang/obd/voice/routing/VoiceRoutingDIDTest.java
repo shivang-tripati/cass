@@ -88,6 +88,19 @@ class VoiceRoutingDIDTest {
     private void stubDid(UUID id, String provider) {
         DidEntity d = did(id, TENANT, provider);
         when(didRepository.findByIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(d));
+
+        // VB-6E: a profile-pinned DID must pass the tenant-scoped ownership,
+        // ACTIVE and ASSIGNED gate before it may be dialed as the caller ID.
+        // The pre-VB-6E lookup was unscoped, so a foreign or pool DID could be
+        // used. Refusal cases live in VoiceRoutingPinnedDidOwnershipTest.
+        when(didRepository
+                .findByIdAndTenantIdAndDeletedAtIsNullAndStatusAndAllocationState(
+                        org.mockito.ArgumentMatchers.eq(id),
+                        org.mockito.ArgumentMatchers.eq(TENANT),
+                        org.mockito.ArgumentMatchers.eq(com.shivang.obd.did.DidStatus.ACTIVE),
+                        org.mockito.ArgumentMatchers.eq(
+                                com.shivang.obd.did.AllocationState.ASSIGNED)))
+                .thenReturn(Optional.of(d));
     }
 
     private void stubEligibilityAllowed(UUID didId) {
