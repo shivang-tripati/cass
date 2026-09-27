@@ -126,6 +126,11 @@ public class CampaignService {
         // entities constructed outside REST (DTO validation covers that path;
         // the V48 DB CHECK is the last line of defense).
         DailyDialLimitService.assertConfigurable(request.dailyDialLimit());
+        // VB-6D.2: canonical domain rule for retry policy. DTO bean constraints
+        // cannot express duplicate categories or an enabled rule with no delay,
+        // and this also guards entities built outside REST.
+        RetryPolicyValidator.validateView(request.retryPolicy());
+        RetryPolicyValidator.validate(mapper.toDomainRetryPolicy(request.retryPolicy()));
 
         CampaignEntity entity = mapper.toEntity(request, tenantId);
         CampaignEntity saved = repository.save(entity);
@@ -203,6 +208,9 @@ public class CampaignService {
             request.audioAssetId(), request.ttsTemplateId());
         // VB-6C.2: same canonical domain rule on the update path.
         DailyDialLimitService.assertConfigurable(request.dailyDialLimit());
+        // VB-6D.2: same canonical domain rule for retry policy.
+        RetryPolicyValidator.validateView(request.retryPolicy());
+        RetryPolicyValidator.validate(mapper.toDomainRetryPolicy(request.retryPolicy()));
 
         mapper.updateEntity(entity, request);
         CampaignEntity saved = repository.save(entity);
@@ -212,8 +220,7 @@ public class CampaignService {
 
     /** Soft delete: preserves the row, stamps both deletion audit columns. */
     @Transactional
-    public void delete(UUID campaignId) {
-        UUID userId = requireUserId();
+    public void delete(UUID campaignId) {        UUID userId = requireUserId();
         CampaignEntity entity = findVisible(campaignId, currentScope());
         authorizationService.requireCapability(
             userId, CAP_MANAGE, AccessCheck.forTenant(entity.getTenantId()));

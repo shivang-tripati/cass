@@ -132,4 +132,100 @@ class CampaignOpenApiContractTest {
         assertThat(updateOp.at("/requestBody/content/application~1json/schema/$ref")
             .asText()).contains("UpdateCampaignRequest");
     }
+
+    // === VB-6D.2: retry rule documentation in the GENERATED spec ===
+
+    @Test
+    @DisplayName("OAS-D1: RetryPolicyConfig documents the flat allowance and the rules array")
+    void retryPolicySchemaDocumented() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        JsonNode policy = schema(spec, "RetryPolicyConfig");
+        assertThat(policy.isMissingNode()).isFalse();
+
+        // The pre-existing flat fields are still documented (not replaced).
+        assertThat(policy.at("/properties/maxAttempts/properties").isMissingNode()).isTrue();
+        assertThat(policy.at("/properties/maxAttempts/type").asText()).isEqualTo("integer");
+        assertThat(policy.at("/properties/maxAttempts/minimum").asInt()).isZero();
+        assertThat(policy.at("/properties/maxAttempts/maximum").asInt()).isEqualTo(10);
+        assertThat(policy.at("/properties/intervalSeconds/type").asText()).isEqualTo("integer");
+        assertThat(policy.at("/properties/strategy").isMissingNode()).isFalse();
+
+        // maxAttempts counts RETRIES: the description must say so, because the
+        // field name is the single most misreadable part of the policy.
+        assertThat(policy.at("/properties/maxAttempts/description").asText())
+                .contains("RETRIES")
+                .contains("1 + maxAttempts");
+
+        JsonNode rules = policy.at("/properties/rules");
+        assertThat(rules.isMissingNode()).isFalse();
+        assertThat(rules.at("/type").asText()).isEqualTo("array");
+        assertThat(rules.at("/items/$ref").asText()).contains("RetryRuleConfig");
+    }
+
+    @Test
+    @DisplayName("OAS-D2: RetryRuleConfig documents category, count bounds and the MM:SS delay")
+    void retryRuleSchemaDocumented() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        JsonNode rule = schema(spec, "RetryRuleConfig");
+        assertThat(rule.isMissingNode()).isFalse();
+
+        JsonNode category = rule.at("/properties/category");
+        assertThat(category.isMissingNode()).isFalse();
+        assertThat(category.at("/type").asText()).isEqualTo("string");
+        // All six product categories are enumerated, including the two reserved
+        // for a future reliable provider mapping.
+        assertThat(category.at("/enum").toString())
+                .contains("NO_ANSWER", "BUSY", "HANGUP", "FAILED",
+                        "SWITCHED_OFF", "NOT_REACHABLE");
+        assertThat(category.at("/description").asText())
+                .contains("SWITCHED_OFF", "NOT_REACHABLE")
+                .contains("HANGUP");
+
+        JsonNode maxRetries = rule.at("/properties/maxRetries");
+        assertThat(maxRetries.at("/type").asText()).isEqualTo("integer");
+        assertThat(maxRetries.at("/minimum").asInt()).isZero();
+        assertThat(maxRetries.at("/maximum").asInt()).isEqualTo(10);
+        assertThat(maxRetries.at("/description").asText())
+                .contains("RETRIES")
+                .contains("never consume");
+
+        JsonNode delay = rule.at("/properties/retryDelay");
+        assertThat(delay.at("/type").asText()).isEqualTo("string");
+        assertThat(delay.at("/pattern").asText()).isEqualTo("^\\d{2}:\\d{2}$");
+        assertThat(delay.at("/description").asText())
+                .contains("MM:SS")
+                .contains("timezone-independent");
+
+        // No rule field is mandatory in the schema sense beyond what the domain
+        // validator enforces: an omitted delay is how a category is switched off.
+        assertThat(rule.path("required").toString())
+                .contains("category")
+                .doesNotContain("retryDelay");
+    }
+
+    @Test
+    @DisplayName("OAS-D3: campaign create/update request schemas expose retryPolicy")
+    void campaignRequestsExposeRetryPolicy() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        for (String dto : new String[] {"CreateCampaignRequest", "UpdateCampaignRequest",
+                "CampaignResponse"}) {
+            assertThat(schema(spec, dto).at("/properties/retryPolicy").isMissingNode())
+                    .as("%s must document retryPolicy", dto)
+                    .isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("OAS-D4: the previously documented campaign fields are unchanged")
+    void existingCampaignFieldsUnchanged() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        JsonNode create = schema(spec, "CreateCampaignRequest");
+
+        // dailyDialLimit (VB-6C.2) must survive this phase untouched.
+        JsonNode daily = create.at("/properties/dailyDialLimit");
+        assertThat(daily.isMissingNode()).isFalse();
+        assertThat(daily.at("/type").asText()).isEqualTo("integer");
+        assertThat(daily.at("/minimum").asInt()).isEqualTo(1);
+        assertThat(daily.at("/maximum").asInt()).isEqualTo(3);
+    }
 }

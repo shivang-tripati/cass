@@ -29,6 +29,7 @@ import com.shivang.obd.voice.call.CallSessionRepository;
 import com.shivang.obd.voice.call.CallSessionStatus;
 import com.shivang.obd.voice.call.CallType;
 import com.shivang.obd.voice.call.EndpointType;
+import com.shivang.obd.voice.call.HangupCauseMapper;
 import com.shivang.obd.voice.media.VoiceMediaController;
 import com.shivang.obd.voice.routing.VoiceRoute;
 import com.shivang.obd.voice.routing.VoiceRoutingDecision;
@@ -418,7 +419,15 @@ public class AgentOutboundCallService {
             return;
         }
 
-        boolean success = "NORMAL_CLEARING".equals(hangupCause) || hangupCause == null;
+        // VB-6D.1: a normal release is an outcome, not a failure, and is
+        // recognised by the shared boundary. Previously this path compared only
+        // the symbolic "NORMAL_CLEARING", so a provider reporting the numeric
+        // cause 16 was treated as a FAILURE and stamped with the
+        // non-canonical code "COMPLETED"; and an ABSENT cause was optimistically
+        // treated as success. Both are corrected: normal clearing is success
+        // (numeric or symbolic), and an unknown cause is a canonical
+        // HANGUP_UNKNOWN failure rather than a guessed success.
+        boolean success = HangupCauseMapper.isNormalClearing(hangupCause);
         boolean alreadyFinal = session.getStatus() == CallSessionStatus.COMPLETED
                 || session.getStatus() == CallSessionStatus.FAILED
                 || session.getStatus() == CallSessionStatus.CANCELLED;
@@ -430,7 +439,7 @@ public class AgentOutboundCallService {
             customerLeg.setStatus(success ? CallLegStatus.COMPLETED : CallLegStatus.FAILED);
             customerLeg.setEndedAt(Instant.now());
             if (!success) {
-                customerLeg.setFailureCode(mapHangupCause(hangupCause));
+                customerLeg.setFailureCode(HangupCauseMapper.toFailureCode(hangupCause));
                 customerLeg.setFailureReason("Hangup cause: " + hangupCause);
             }
             callLegRepository.save(customerLeg);
@@ -440,7 +449,7 @@ public class AgentOutboundCallService {
         if (!alreadyFinal) {
             session.setStatus(success ? CallSessionStatus.COMPLETED : CallSessionStatus.FAILED);
             if (!success) {
-                session.setFailureCode(mapHangupCause(hangupCause));
+                session.setFailureCode(HangupCauseMapper.toFailureCode(hangupCause));
                 session.setFailureReason("Hangup cause: " + hangupCause);
             }
             session.setEndedAt(Instant.now());
@@ -546,21 +555,6 @@ public class AgentOutboundCallService {
             case REJECTED -> "REJECTED";
             case PROVIDER_UNAVAILABLE -> "PROVIDER_UNAVAILABLE";
             default -> "DIAL_FAILED";
-        };
-    }
-
-    /** Same cause mapping as the shared ESL hangup handler (subset used here). */
-    private String mapHangupCause(String hangupCause) {
-        if (hangupCause == null) {
-            return "HANGUP_UNKNOWN";
-        }
-        return switch (hangupCause) {
-            case "17", "USER_BUSY" -> "BUSY";
-            case "19", "NO_ANSWER" -> "NO_ANSWER";
-            case "16", "NORMAL_CLEARING" -> "COMPLETED";
-            case "21", "CALL_REJECTED" -> "REJECTED";
-            case "34", "NO_CIRCUIT_AVAILABLE" -> "CONGESTION";
-            default -> "HANGUP_" + hangupCause;
         };
     }
 

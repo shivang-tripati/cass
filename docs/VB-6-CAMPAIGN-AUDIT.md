@@ -94,6 +94,13 @@ Existing failure/outcome taxonomy (all string-typed `failureCode`):
 | BUSY | `BUSY` (dial result + cause 17) | Yes | Yes | none |
 | FAILED | `DIAL_FAILED`, `TEMPORARY_FAILURE` (cause 41), `CONGESTION` (34), `HANGUP_*` | Yes | Partially | no unified enum; string codes scattered |
 | SWITCHED_OFF | — | **No** | — | no FreeSWITCH cause mapping (`HANGUP_<CAUSE>` fallback only) |
+
+> **Remediated by VB-6D.1** (the two rows above are the audit's point-in-time record). The
+> `HANGUP_<CAUSE>` fallback no longer exists: provider causes are normalized by a single total,
+> closed boundary (`com.shivang.obd.voice.call.HangupCauseMapper`), so every persisted
+> `failure_code` is a canonical `CallFailureCode` and an unmapped cause resolves to
+> `HANGUP_UNKNOWN`. `SWITCHED_OFF` / `NOT_REACHABLE` remain deliberately unimplemented — see
+> `docs/VB-6D.1-FAILURE-TAXONOMY-IMPLEMENTATION.md` §9.
 | NOT_REACHABLE | `RESOURCE_UNAVAILABLE` (47), `TEMPORARILY_UNAVAILABLE` | Partial | Partial | semantics not product-defined |
 | HANGUP (customer hangs up early) | `NORMAL_CLEARING` → COMPLETED | Yes | Yes | early-hangup counted as success today |
 | Provider failure | `PROVIDER_UNAVAILABLE` (requeue) | Yes | Yes | — |

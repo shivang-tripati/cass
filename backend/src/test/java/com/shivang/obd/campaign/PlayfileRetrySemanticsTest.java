@@ -84,7 +84,7 @@ class PlayfileRetrySemanticsTest {
                         didRepository, null, null),
                 authorizationService,
                 currentUserProvider, readinessService, tenantRepository,
-                runtimeConfigResolver, dialService, eslEventProcessor);
+                runtimeConfigResolver, new RetryPolicyService(), dialService, eslEventProcessor);
 
         campaign = new CampaignEntity();
         campaign.setId(CAMPAIGN_ID);

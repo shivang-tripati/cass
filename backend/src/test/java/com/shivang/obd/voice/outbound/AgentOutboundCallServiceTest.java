@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.shivang.obd.campaign.CallFailureCode;
 import com.shivang.obd.voice.media.OutboundDialRequest;
 import com.shivang.obd.voice.media.OutboundDialResponse;
 import com.shivang.obd.voice.media.OutboundDialResult;
@@ -495,5 +496,70 @@ class AgentOutboundCallServiceTest {
         service.onCustomerLegHangup(customer, "USER_BUSY", TENANT);
         verify(agentConnectEvents, never()).onCallerHangup(any());
         verify(voiceCapacity, never()).release(any(), any());
+    }
+
+    // ---------------------------------------------------------------------
+    // VB-6D.1: canonical failure taxonomy on this hangup path.
+    // Before this phase an unmapped cause produced "HANGUP_" + cause, a
+    // numeric cause 16 was treated as a failure stamped with the
+    // non-canonical code "COMPLETED", and an absent cause was optimistically
+    // treated as a success.
+    // ---------------------------------------------------------------------
+
+    /** A pre-bridge leg + its session, as in O20. */
+    private record Pending(CallLeg leg, CallSession session) {
+    }
+
+    private Pending pending() {
+        CallLeg leg = savedSession();
+        leg.setStatus(CallLegStatus.DIALING);
+        CallSession session =
+                callSessionRepository.findByIdAndDeletedAtIsNull(leg.getCallSessionId()).get();
+        session.setStatus(CallSessionStatus.DIALING);
+        return new Pending(leg, session);
+    }
+
+    @Test
+    @DisplayName("O21: numeric cause 16 is a normal clearing (COMPLETED, no failure code)")
+    void numericNormalClearingIsSuccessfulCompletion() {
+        Pending p = pending();
+
+        service.onCustomerLegHangup(p.leg(), "16", TENANT);
+
+        assertThat(p.session().getStatus())
+                .as("numeric 16 is a normal release and must complete, not fail")
+                .isEqualTo(CallSessionStatus.COMPLETED);
+        assertThat(p.leg().getStatus()).isEqualTo(CallLegStatus.COMPLETED);
+        assertThat(p.session().getFailureCode())
+                .as("a successful completion must not carry a failure code")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("O22: an unmapped cause yields canonical HANGUP_UNKNOWN, never HANGUP_<cause>")
+    void unmappedCauseYieldsCanonicalUnknown() {
+        Pending p = pending();
+
+        service.onCustomerLegHangup(p.leg(), "27", TENANT);
+
+        assertThat(p.session().getStatus()).isEqualTo(CallSessionStatus.FAILED);
+        assertThat(p.session().getFailureCode())
+                .isEqualTo("HANGUP_UNKNOWN")
+                .doesNotContain("27");
+        assertThat(p.leg().getFailureCode()).isEqualTo("HANGUP_UNKNOWN");
+        assertThat(CallFailureCode.fromCode(p.session().getFailureCode()))
+                .as("persisted code must be canonical")
+                .isPresent();
+    }
+
+    @Test
+    @DisplayName("O23: an absent hangup cause is a canonical failure, not an assumed success")
+    void absentCauseIsNotAssumedSuccess() {
+        Pending p = pending();
+
+        service.onCustomerLegHangup(p.leg(), null, TENANT);
+
+        assertThat(p.session().getStatus()).isEqualTo(CallSessionStatus.FAILED);
+        assertThat(p.session().getFailureCode()).isEqualTo("HANGUP_UNKNOWN");
     }
 }

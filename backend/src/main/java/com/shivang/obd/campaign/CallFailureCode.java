@@ -25,9 +25,25 @@ import java.util.Optional;
  * Codes live in one enum so producers and consumers reference a single
  * domain vocabulary; persistence stays string-based (existing columns), so
  * historical values remain readable and {@link #fromCode} resolves unknown
- * or forward-compat values to {@link Optional#empty()} — callers classify
- * them deterministically (unknown = temporary under the current gate,
- * exactly as the legacy predicate did) and nothing crashes.
+ * or forward-compat values to {@link Optional#empty()}.
+ * <p>
+ * <strong>VB-6D.1 — the persistence boundary is now closed.</strong> Every
+ * provider/telephony failure outcome is translated to a canonical constant by
+ * {@code com.shivang.obd.voice.call.HangupCauseMapper} before it reaches
+ * {@code failureCode}. That mapper is total and closed: it never echoes
+ * provider text, so values such as {@code "HANGUP_" + cause} — which
+ * {@link #fromCode} could not resolve and which therefore fell through to the
+ * permissive branch of the retry gate — can no longer be produced. Consumers
+ * that need to act on a code use {@link #canonicalize(String)}, which always
+ * yields a canonical constant ({@link #HANGUP_UNKNOWN} for anything else),
+ * so classification never depends on an empty lookup.
+ * <p>
+ * <strong>Not modelled, deliberately.</strong> Carrier-specific categories
+ * (switched-off, network-unreachable) are absent: the telephony boundary
+ * exposes them only as provider-dependent SIP/Q.850 causes whose spelling
+ * varies per carrier, so any mapping would be a guess. They are a future
+ * policy decision (VB-6D audit OD-2) and today resolve to
+ * {@link #HANGUP_UNKNOWN}.
  */
 public enum CallFailureCode {
 
@@ -57,7 +73,14 @@ public enum CallFailureCode {
     /** Requested resource unavailable (hangup cause 47). */
     RESOURCE_UNAVAILABLE(RetryClass.TEMPORARY),
 
-    /** Unrecognized or missing hangup cause. */
+    /**
+     * Canonical catch-all for a hangup whose cause carries no usable
+     * classification, including an absent or provider-specific cause the
+     * telephony boundary does not recognise. VB-6D.1: this is now the
+     * <em>only</em> result for an unmapped cause, so a provider string can
+     * never become a business failure code, and every such outcome is
+     * classified by this one reviewed constant.
+     */
     HANGUP_UNKNOWN(RetryClass.TEMPORARY),
 
     // === In-call media failures (EslEventService / PlayfileExecutionService) ===
@@ -242,27 +265,48 @@ public enum CallFailureCode {
     }
 
     /**
-     * Resolves the retry classification for a persisted failure code under
-     * the current policy. Null and unknown codes classify as
-     * {@link RetryClass#TEMPORARY}, exactly matching the legacy predicate,
-     * where only the enumerated permanent codes were ever withheld from
-     * retry.
+     * Resolves the retry classification for a persisted failure code under the
+     * current policy, via {@link #canonicalize(String)}.
+     * <p>
+     * Behaviour for every canonical code is unchanged from the legacy gate. An
+     * absent or non-canonical value is classified as
+     * {@link #HANGUP_UNKNOWN} rather than falling through an implicit
+     * default, so the unresolved case is now an explicit, named policy that is
+     * changeable in exactly one place instead of an accident of an empty
+     * lookup.
      */
     public static RetryClass retryClassOf(String code) {
-        return isPermanent(code)
-                ? RetryClass.PERMANENT
-                : RetryClass.TEMPORARY;
+        return canonicalize(code).getRetryClass();
     }
 
     /**
      * Whether the given persisted failure code is permanent (never retried)
-     * under the current policy — the exact legacy gate semantics: only the
-     * {@link RetryClass#PERMANENT} constants are permanent; null, unknown,
-     * and every temporary code retry as before.
+     * under the current policy. Delegates to {@link #retryClassOf(String)} so
+     * the retry gate and any future consumer share one classification path.
      */
     public static boolean isPermanent(String code) {
-        return fromCode(code)
-                .map(c -> c.getRetryClass() == RetryClass.PERMANENT)
-                .orElse(false);
+        return retryClassOf(code) == RetryClass.PERMANENT;
+    }
+
+    /**
+     * Resolves any persisted failure string to a canonical constant, never
+     * {@code null} (VB-6D.1).
+     * <p>
+     * This is the single entry point consumers must use when they need to
+     * <em>act</em> on a persisted code. A value that is absent, blank, or not
+     * a canonical constant historically resolves to {@link #HANGUP_UNKNOWN},
+     * the canonical "unrecognized or missing hangup cause" code. That case was
+     * reachable because the telephony adapters once persisted
+     * provider-derived {@code "HANGUP_" + cause} strings; the adapters no
+     * longer emit them (see {@code HangupCauseMapper}), and this method keeps
+     * the resolution safe for any value that still exists.
+     * <p>
+     * The distinction matters: {@link #fromCode} answers "is this a known
+     * code?" and legitimately returns empty; this method answers "which
+     * canonical code does this mean?" and always has an answer. A caller that
+     * needs to branch on meaning must never branch on emptiness.
+     */
+    public static CallFailureCode canonicalize(String code) {
+        return fromCode(code).orElse(HANGUP_UNKNOWN);
     }
 }

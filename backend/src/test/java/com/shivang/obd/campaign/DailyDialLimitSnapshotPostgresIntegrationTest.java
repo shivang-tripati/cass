@@ -249,7 +249,14 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
             ContentMode.AUDIO, seedAudio(tenantId), null,
             new ScheduleConfig(
                 LocalDate.of(2026, 9, 1), LocalDate.of(2026, 12, 31),
-                LocalTime.of(9, 0), LocalTime.of(18, 0), "Asia/Kolkata", Set.of(), null),
+                // A FULL-DAY window, deliberately. A bounded 09:00-18:00 window
+                // made execution readiness depend on the wall-clock time the
+                // suite happened to run at: this test asserts the frozen
+                // dailyDialLimit, not the calling window, so binding it to a
+                // clock turns an unrelated assertion into a time bomb (it
+                // started failing after 18:00 IST). Tests that DO assert
+                // schedule readiness keep their bounded window on purpose.
+                LocalTime.of(0, 0), LocalTime.of(23, 59), "Asia/Kolkata", Set.of(), null),
             new RetryPolicyConfig(0, null, null),
             null, null, false,
             dailyDialLimit);

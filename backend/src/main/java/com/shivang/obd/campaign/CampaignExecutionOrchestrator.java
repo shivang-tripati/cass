@@ -66,6 +66,12 @@ public class CampaignExecutionOrchestrator {
     private final TenantRepository tenantRepository;
     /** Execution-scoped configuration resolution (immutable snapshot, VB-6A). */
     private final CampaignRuntimeConfigResolver runtimeConfigResolver;
+    /**
+     * VB-6D.2: the single authority for "may this failed attempt be retried,
+     * and when?". Injected rather than inlined so this class holds no failure
+     * code, category, or allowance knowledge of its own.
+     */
+    private final RetryPolicyService retryPolicyService;
     private final OutboundDialService dialService;
     private final EslEventProcessor eslEventProcessor;
 
@@ -237,37 +243,30 @@ public class CampaignExecutionOrchestrator {
         // on the configuration their execution was created with.
         CampaignRuntimeConfigResolver.CampaignRuntimeConfig config =
                 runtimeConfigResolver.resolve(execution);
-        RetryPolicySpec retryPolicy = config.retryPolicy();
-        if (retryPolicy == null || retryPolicy.getMaxAttempts() == null || retryPolicy.getMaxAttempts() <= 0) {
-            // No retries configured
-            return;
-        }
-
-        int maxTotalAttempts = 1 + retryPolicy.getMaxAttempts();
-        Integer intervalSeconds = retryPolicy.getIntervalSeconds();
 
         for (CallAttempt failedAttempt : failedAttempts) {
-            // VB-1: permanent configuration failures must not be retried —
-            // recreating attempts with the same broken campaign/asset config
-            // cannot succeed. Retryable failure codes (temporary failures like
-            // PLAYBACK_FAILED, BUSY, NO_ANSWER, TEMPORARY_FAILURE, etc.)
-            // continue through the existing retry policy below.
-            if (isPermanentFailure(failedAttempt.getFailureCode())) {
-                log.debug("Attempt {} for contact {} failed permanently ({}); no retry",
+            // VB-6D.2: the campaign retry policy is the single authority. This
+            // method no longer knows any failure code, category, or allowance —
+            // it applies a resolved decision. The decision is a pure function
+            // (see RetryPolicyService): no counters, no reservations, no I/O.
+            RetryDecision decision = retryPolicyService.evaluate(
+                    config.retryPolicy(),
+                    failedAttempt.getFailureCode(),
+                    failedAttempt.getAttemptNumber(),
+                    failedAttempt.getCompletedAt());
+
+            if (!decision.retryable()) {
+                log.debug("No retry for attempt {} of contact {}: {}",
                     failedAttempt.getAttemptNumber(), failedAttempt.getContactId(),
-                    failedAttempt.getFailureCode());
+                    decision.reason());
                 continue;
             }
 
-            int nextAttemptNumber = failedAttempt.getAttemptNumber() + 1;
+            int nextAttemptNumber = decision.nextAttemptNumber();
 
-            if (nextAttemptNumber > maxTotalAttempts) {
-                log.debug("Attempt {} for contact {} exceeded max total attempts {}",
-                    failedAttempt.getAttemptNumber(), failedAttempt.getContactId(), maxTotalAttempts);
-                continue;
-            }
-
-            // Check if retry already exists (idempotency)
+            // Check if retry already exists (idempotency). The unique index on
+            // (execution_id, contact_id, attempt_number) makes duplicate
+            // creation physically impossible; this is the cheap pre-check.
             if (attemptRepository.existsByExecutionIdAndContactIdAndAttemptNumberAndDeletedAtIsNull(
                     executionId, failedAttempt.getContactId(), nextAttemptNumber)) {
                 continue;
@@ -284,14 +283,10 @@ public class CampaignExecutionOrchestrator {
                 continue;
             }
 
-            // Calculate next scheduled time
-            Instant baseTime = failedAttempt.getCompletedAt() != null
-                ? failedAttempt.getCompletedAt()
-                : Instant.now();
-            Instant nextScheduledAt = baseTime.plusSeconds(intervalSeconds != null ? intervalSeconds : 60);
-
-            // Adjust to the snapshot's schedule window if needed (VB-6A)
-            nextScheduledAt = adjustToScheduleWindow(config, nextScheduledAt);
+            // VB-6D.2: the policy owns the delay arithmetic (timezone
+            // independent). Clamping into the snapshot's calling hours stays
+            // here because it is a schedule concern, not a policy concern.
+            Instant nextScheduledAt = adjustToScheduleWindow(config, decision.nextEligibleAt());
 
             CallAttempt retryAttempt = new CallAttempt();
             retryAttempt.setExecutionId(executionId);
@@ -304,8 +299,9 @@ public class CampaignExecutionOrchestrator {
             retryAttempt.setStatus(CallAttemptStatus.QUEUED);
 
             attemptRepository.save(retryAttempt);
-            log.info("Created retry attempt {} for execution {}, contact {}",
-                nextAttemptNumber, executionId, failedAttempt.getContactId());
+            log.info("Created retry attempt {} for execution {}, contact {} ({})",
+                nextAttemptNumber, executionId, failedAttempt.getContactId(),
+                decision.reason());
         }
     }
 
@@ -313,14 +309,15 @@ public class CampaignExecutionOrchestrator {
      * Permanent failures can never succeed on retry with the same
      * configuration (VB-1 PLAYBACK_CONFIG_INVALID: missing/unapproved/not-
      * tenant-owned audio asset, and the dial-time hard failures classified by
-     * {@code OutboundDialService}). VB-6A: the gate now delegates to the
-     * canonical {@link CallFailureCode} taxonomy — the classified set is
-     * carried by the enum's PERMANENT retry class, which is behavior-identical
-     * to this predicate's legacy hardcoded list.
+     * {@code OutboundDialService}).
+     *
+     * <p>VB-6D.2: this gate no longer lives here. {@link RetryPolicyService}
+     * applies the canonical {@link CallFailureCode} permanence check as step 3
+     * of its evaluation order, so there is exactly one place that can refuse a
+     * retry for a permanent outcome — and the orchestrator cannot drift from
+     * it. The helper below was removed rather than left dead: a second copy of
+     * the predicate would be a second thing to keep in sync.
      */
-    private static boolean isPermanentFailure(String failureCode) {
-        return CallFailureCode.isPermanent(failureCode);
-    }
 
     /**
      * Reconciles execution state based on its attempts.

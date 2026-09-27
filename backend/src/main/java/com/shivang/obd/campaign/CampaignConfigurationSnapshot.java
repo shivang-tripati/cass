@@ -7,6 +7,7 @@ import jakarta.persistence.Enumerated;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import lombok.AllArgsConstructor;
@@ -103,6 +104,16 @@ public class CampaignConfigurationSnapshot {
     @Column(name = "retry_strategy", nullable = false, length = 20)
     private RetryStrategy retryStrategy;
 
+    /**
+     * VB-6D.2: the campaign's per-category retry rules, frozen verbatim at
+     * execution creation. {@code null} for campaigns that configure none, in
+     * which case the flat retry fields above govern exactly as they did before
+     * this phase.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "retry_rules")
+    private List<RetryRule> retryRules;
+
     // === Type-specific and integration configuration ===
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -121,6 +132,38 @@ public class CampaignConfigurationSnapshot {
      */
     @Column(name = "daily_dial_limit")
     private Integer dailyDialLimit;
+
+    /**
+     * The pre-VB-6D.2 shape: no per-category retry rules. Retained so every
+     * existing construction site keeps its exact previous meaning — a
+     * snapshot built this way has {@code retryRules == null}, which means the
+     * flat retry fields govern.
+     */
+    public CampaignConfigurationSnapshot(
+            CampaignType campaignType,
+            UUID contactGroupId,
+            UUID didId,
+            ContentMode contentMode,
+            UUID audioAssetId,
+            UUID ttsTemplateId,
+            LocalDate scheduleStartDate,
+            LocalDate scheduleEndDate,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            String timezone,
+            Set<DayOfWeek> allowedDaysOfWeek,
+            UUID holidayCalendarId,
+            Integer retryMaxAttempts,
+            Integer retryIntervalSeconds,
+            RetryStrategy retryStrategy,
+            JsonNode typeConfig,
+            Boolean callOnWhitelistNumbers,
+            Integer dailyDialLimit) {
+        this(campaignType, contactGroupId, didId, contentMode, audioAssetId, ttsTemplateId,
+                scheduleStartDate, scheduleEndDate, dailyStartTime, dailyEndTime, timezone,
+                allowedDaysOfWeek, holidayCalendarId, retryMaxAttempts, retryIntervalSeconds,
+                retryStrategy, null, typeConfig, callOnWhitelistNumbers, dailyDialLimit);
+    }
 
     /**
      * Convenience view of the snapshot's schedule window as the same value
@@ -142,10 +185,11 @@ public class CampaignConfigurationSnapshot {
 
     /**
      * Convenience view of the snapshot's retry policy as the same value
-     * object the live entity uses.
+     * object the live entity uses, so execution code can consume both
+     * uniformly.
      */
     public RetryPolicySpec retryPolicySpec() {
         return new RetryPolicySpec(
-                retryMaxAttempts, retryIntervalSeconds, retryStrategy);
+                retryMaxAttempts, retryIntervalSeconds, retryStrategy, retryRules);
     }
 }

@@ -10,6 +10,7 @@ import com.shivang.obd.voice.call.CallLegType;
 import com.shivang.obd.voice.call.CallSession;
 import com.shivang.obd.voice.call.CallSessionRepository;
 import com.shivang.obd.voice.call.CallSessionStatus;
+import com.shivang.obd.voice.call.HangupCauseMapper;
 import com.shivang.obd.voice.capacity.VoiceCapacityService;
 import com.shivang.obd.voice.dtmf.DtmfResultService;
 import com.shivang.obd.voice.dtmf.DtmfResultType;
@@ -480,7 +481,7 @@ public class EslEventService {
         boolean success = !inCallFailureRecorded && isSuccessfulCompletion(hangupCause);
         String failureCode = inCallFailureRecorded
                 ? recordedFailureCode
-                : mapHangupCauseToCode(hangupCause);
+                : HangupCauseMapper.toFailureCode(hangupCause);
         String failureReason = inCallFailureRecorded
                 ? session.getFailureReason()
                 : "Hangup cause: " + hangupCause;
@@ -671,32 +672,10 @@ public class EslEventService {
      * FreeSWITCH hangup causes: https://freeswitch.org/confluence/display/FREESWITCH/Hangup+Causes
      */
     private boolean isSuccessfulCompletion(String hangupCause) {
-        if (hangupCause == null) {
-            return false;
-        }
-
-        // Successful: NORMAL_CLEARING (16)
-        return "16".equals(hangupCause) || "NORMAL_CLEARING".equalsIgnoreCase(hangupCause);
-    }
-
-    /**
-     * Maps hangup cause to standardized failure code.
-     */
-    private String mapHangupCauseToCode(String hangupCause) {
-        if (hangupCause == null) {
-            return "HANGUP_UNKNOWN";
-        }
-
-        return switch (hangupCause) {
-            case "17", "USER_BUSY" -> "BUSY";
-            case "19", "NO_ANSWER" -> "NO_ANSWER";
-            case "16", "NORMAL_CLEARING" -> "COMPLETED";
-            case "21", "CALL_REJECTED" -> "REJECTED";
-            case "34", "NO_CIRCUIT_AVAILABLE" -> "CONGESTION";
-            case "41", "NORMAL_TEMPORARY_FAILURE" -> "TEMPORARY_FAILURE";
-            case "47", "RESOURCE_UNAVAILABLE" -> "RESOURCE_UNAVAILABLE";
-            default -> "HANGUP_" + hangupCause;
-        };
+        // VB-6D.1: a normal release is an outcome, not a failure. Delegated to
+        // the shared boundary so this adapter and the agent-outbound adapter
+        // cannot disagree about the same provider event.
+        return HangupCauseMapper.isNormalClearing(hangupCause);
     }
 
     /** Failure code recorded on session/attempt when media playback fails (temporary). */

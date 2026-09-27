@@ -115,6 +115,11 @@ public class CampaignConfigurationService {
                 retry.getMaxAttempts(),
                 retry.getIntervalSeconds(),
                 retry.getStrategy(),
+                // VB-6D.2: per-category retry rules are frozen here, exactly as
+                // configured. A campaign edited after this point cannot change
+                // this execution's retry behaviour. Null stays null, which
+                // means "no per-category rules" (the flat fields govern).
+                retry.getRules(),
                 // Canonical validated JSON (compatibility codec output).
                 validatedTypeConfig.toJson(),
                 Boolean.TRUE.equals(campaign.getCallOnWhitelistNumbers()),
