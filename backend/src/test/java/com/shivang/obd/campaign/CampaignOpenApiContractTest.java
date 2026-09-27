@@ -228,4 +228,61 @@ class CampaignOpenApiContractTest {
         assertThat(daily.at("/minimum").asInt()).isEqualTo(1);
         assertThat(daily.at("/maximum").asInt()).isEqualTo(3);
     }
+
+    // === VB-6D.3: campaign daily-attempt ceiling documentation ===
+
+    @Test
+    @DisplayName("OAS-E1: maxDailyAttempts is documented on create/update/response")
+    void maxDailyAttemptsExposedOnAllCampaignSchemas() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        for (String dto : new String[] {"CreateCampaignRequest", "UpdateCampaignRequest",
+                "CampaignResponse"}) {
+            JsonNode field = schema(spec, dto).at("/properties/maxDailyAttempts");
+            assertThat(field.isMissingNode())
+                    .as("%s must document maxDailyAttempts", dto)
+                    .isFalse();
+            assertThat(field.at("/type").asText()).isEqualTo("integer");
+            assertThat(field.at("/minimum").asInt())
+                    .isEqualTo(DailyAttemptSafetyService.MIN_DAILY_ATTEMPTS_PER_CONTACT);
+            assertThat(field.at("/maximum").asInt())
+                    .isEqualTo(DailyAttemptSafetyService.MAX_DAILY_ATTEMPTS_PER_CONTACT);
+        }
+    }
+
+    @Test
+    @DisplayName("OAS-E2: the description distinguishes the two daily limits and states null semantics")
+    void maxDailyAttemptsDescriptionIsUnambiguous() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        JsonNode field =
+                schema(spec, "CreateCampaignRequest").at("/properties/maxDailyAttempts");
+        String description = field.at("/description").asText();
+
+        // The single most dangerous documentation mistake here would be
+        // letting a reader confuse this with the DNID-scoped dial limit.
+        assertThat(description)
+                .contains("ATTEMPT")
+                .contains("dailyDialLimit")
+                .contains("DNID")
+                .contains("default of 10");
+        // Null means platform default, and it is not required.
+        assertThat(schema(spec, "CreateCampaignRequest").path("required").toString())
+                .doesNotContain("maxDailyAttempts");
+    }
+
+    @Test
+    @DisplayName("OAS-E3: both daily controls are documented side by side on the same schema")
+    void bothDailyLimitsCoexistOnTheCreateSchema() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        JsonNode create = schema(spec, "CreateCampaignRequest");
+
+        assertThat(create.at("/properties/dailyDialLimit").isMissingNode()).isFalse();
+        assertThat(create.at("/properties/maxDailyAttempts").isMissingNode()).isFalse();
+
+        // dailyDialLimit keeps the VB-6C ceiling of 3 (provider-accepted dials).
+        assertThat(create.at("/properties/dailyDialLimit/maximum").asInt())
+                .isEqualTo(DailyDialLimitService.PLATFORM_DAILY_DIAL_LIMIT);
+        // maxDailyAttempts is the campaign's dispatch ceiling, bounded by 10.
+        assertThat(create.at("/properties/maxDailyAttempts/maximum").asInt())
+                .isEqualTo(DailyAttemptSafetyService.MAX_DAILY_ATTEMPTS_PER_CONTACT);
+    }
 }

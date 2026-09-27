@@ -1,5 +1,6 @@
 package com.shivang.obd.campaign.dto;
 
+import com.shivang.obd.campaign.CampaignDailyAttempts;
 import com.shivang.obd.campaign.DailyDialLimit;
 import tools.jackson.databind.JsonNode;
 import com.shivang.obd.campaign.CampaignRunMode;
@@ -53,6 +54,53 @@ public record CreateCampaignRequest(
         + "Valid values are 1-3. Null uses the platform maximum of 3.",
         minimum = "1", maximum = "3",
         example = "2")
-    Integer dailyDialLimit
+    Integer dailyDialLimit,
+
+    /**
+     * Optional campaign-specific ceiling on daily campaign attempts for one
+     * contact. Distinct from {@code dailyDialLimit}: that field is the
+     * DNID-scoped provider-accepted dial limit (max 3); this one bounds
+     * dispatches per contact per day across every Voice Blast campaign of the
+     * tenant. Null uses the platform default of 10.
+     */
+    @CampaignDailyAttempts
+    @Schema(description = "Optional campaign-specific ceiling on daily campaign "
+        + "ATTEMPTS for one contact (1-10). Null (omitted) uses the platform default "
+        + "of 10. This is NOT the dailyDialLimit field: dailyDialLimit caps "
+        + "provider-ACCEPTED dials per contact per actual DNID at 3, whereas this "
+        + "caps DISPATCHES per contact per calendar day across all of the tenant's "
+        + "Voice Blast campaigns, so rotating the DID cannot reset it. A value "
+        + "above the platform maximum is rejected. Frozen into the execution "
+        + "snapshot, so editing the campaign later does not change a running "
+        + "execution's ceiling.",
+        minimum = "1", maximum = "10", example = "4")
+    Integer maxDailyAttempts
 ) {
+
+    /**
+     * The pre-VB-6D.3 shape: no daily-attempt override. Retained so existing
+     * construction sites keep their exact previous meaning — a request built
+     * this way means "use the platform default", because {@code null} is the
+     * platform default.
+     */
+    public CreateCampaignRequest(
+            String name,
+            String description,
+            CampaignType campaignType,
+            CampaignRunMode runMode,
+            UUID contactGroupId,
+            UUID didId,
+            ContentMode contentMode,
+            UUID audioAssetId,
+            UUID ttsTemplateId,
+            ScheduleConfig schedule,
+            RetryPolicyConfig retryPolicy,
+            JsonNode typeConfig,
+            JsonNode integrationConfig,
+            Boolean callOnWhitelistNumbers,
+            Integer dailyDialLimit) {
+        this(name, description, campaignType, runMode, contactGroupId, didId, contentMode,
+                audioAssetId, ttsTemplateId, schedule, retryPolicy, typeConfig,
+                integrationConfig, callOnWhitelistNumbers, dailyDialLimit, null);
+    }
 }

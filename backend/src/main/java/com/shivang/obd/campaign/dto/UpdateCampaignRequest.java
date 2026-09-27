@@ -1,5 +1,6 @@
 package com.shivang.obd.campaign.dto;
 
+import com.shivang.obd.campaign.CampaignDailyAttempts;
 import com.shivang.obd.campaign.DailyDialLimit;
 import tools.jackson.databind.JsonNode;
 import com.shivang.obd.campaign.CampaignRunMode;
@@ -49,6 +50,45 @@ public record UpdateCampaignRequest(
         + "Valid values are 1-3. Null uses the platform maximum of 3.",
         minimum = "1", maximum = "3",
         example = "2")
-    Integer dailyDialLimit
+    Integer dailyDialLimit,
+
+    /**
+     * Optional campaign-specific ceiling on daily campaign attempts for one
+     * contact. Null clears the override and restores the platform default.
+     * Distinct from {@code dailyDialLimit} (provider-accepted dials per DNID).
+     */
+    @CampaignDailyAttempts
+    @Schema(description = "Optional campaign-specific ceiling on daily campaign "
+        + "ATTEMPTS for one contact (1-10). Null clears the override so the platform "
+        + "default of 10 applies. This is NOT the dailyDialLimit field, which caps "
+        + "provider-ACCEPTED dials per contact per actual DNID at 3. A value above the "
+        + "platform maximum is rejected. Frozen into the execution snapshot, so editing "
+        + "the campaign later does not change a running execution's ceiling.",
+        minimum = "1", maximum = "10", example = "4")
+    Integer maxDailyAttempts
 ) {
+
+    /**
+     * The pre-VB-6D.3 shape: no daily-attempt override, so the platform
+     * default applies. Retained so existing construction sites keep their
+     * exact previous meaning.
+     */
+    public UpdateCampaignRequest(
+            String name,
+            String description,
+            CampaignRunMode runMode,
+            UUID contactGroupId,
+            UUID didId,
+            ContentMode contentMode,
+            UUID audioAssetId,
+            UUID ttsTemplateId,
+            ScheduleConfig schedule,
+            RetryPolicyConfig retryPolicy,
+            JsonNode typeConfig,
+            JsonNode integrationConfig,
+            Integer dailyDialLimit) {
+        this(name, description, runMode, contactGroupId, didId, contentMode, audioAssetId,
+                ttsTemplateId, schedule, retryPolicy, typeConfig, integrationConfig,
+                dailyDialLimit, null);
+    }
 }

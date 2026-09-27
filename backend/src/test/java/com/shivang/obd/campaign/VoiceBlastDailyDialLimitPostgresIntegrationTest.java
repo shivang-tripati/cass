@@ -111,6 +111,8 @@ class VoiceBlastDailyDialLimitPostgresIntegrationTest {
     @Autowired
     private VoiceBlastDailyUsageEntryRepository entryRepository;
     @Autowired
+    private VoiceBlastDailyAttemptRepository dailyAttemptRepository;
+    @Autowired
     private CallAttemptRepository attemptRepository;
     @Autowired
     private ContactRepository contactRepository;
@@ -607,7 +609,9 @@ class VoiceBlastDailyDialLimitPostgresIntegrationTest {
                 snapshotRepository,
                 new com.shivang.obd.campaign.config.CampaignTypeConfigValidator())),
             dialer, eligibility, routing, capacity,
-            callSessionRepository, callLegRepository, limitService);
+            callSessionRepository, callLegRepository, limitService,
+                new DailyAttemptSafetyService(dailyAttemptRepository, limitService,
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
         // (a) pre-acceptance failure: BUSY consumes nothing.
         UUID attemptA = nextAttempt(contact);
@@ -674,7 +678,9 @@ class VoiceBlastDailyDialLimitPostgresIntegrationTest {
                 snapshotRepository,
                 new com.shivang.obd.campaign.config.CampaignTypeConfigValidator())),
             dialer, eligibility, routing, capacity,
-            callSessionRepository, callLegRepository, limitService);
+            callSessionRepository, callLegRepository, limitService,
+                new DailyAttemptSafetyService(dailyAttemptRepository, limitService,
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
         transactionTemplate().executeWithoutResult(tx -> dialService.processDueAttempts());
 
@@ -736,7 +742,9 @@ class VoiceBlastDailyDialLimitPostgresIntegrationTest {
                 snapshotRepository,
                 new com.shivang.obd.campaign.config.CampaignTypeConfigValidator())),
             dialer, eligibility, routing, capacity,
-            callSessionRepository, callLegRepository, limitService);
+            callSessionRepository, callLegRepository, limitService,
+                new DailyAttemptSafetyService(dailyAttemptRepository, limitService,
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
 
         transactionTemplate().executeWithoutResult(tx -> dialService.processDueAttempts());
 

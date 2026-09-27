@@ -131,6 +131,10 @@ public class CampaignService {
         // and this also guards entities built outside REST.
         RetryPolicyValidator.validateView(request.retryPolicy());
         RetryPolicyValidator.validate(mapper.toDomainRetryPolicy(request.retryPolicy()));
+        // VB-6D.3: canonical domain rule for the daily campaign-attempt
+        // ceiling. DTO validation covers the REST path; this guards entities
+        // built outside it; the V51 CHECK is the last line of defense.
+        DailyAttemptSafetyService.assertConfigurable(request.maxDailyAttempts());
 
         CampaignEntity entity = mapper.toEntity(request, tenantId);
         CampaignEntity saved = repository.save(entity);
@@ -211,6 +215,10 @@ public class CampaignService {
         // VB-6D.2: same canonical domain rule for retry policy.
         RetryPolicyValidator.validateView(request.retryPolicy());
         RetryPolicyValidator.validate(mapper.toDomainRetryPolicy(request.retryPolicy()));
+        // VB-6D.3: canonical domain rule for the daily campaign-attempt
+        // ceiling. DTO validation covers the REST path; this guards entities
+        // built outside it; the V51 CHECK is the last line of defense.
+        DailyAttemptSafetyService.assertConfigurable(request.maxDailyAttempts());
 
         mapper.updateEntity(entity, request);
         CampaignEntity saved = repository.save(entity);

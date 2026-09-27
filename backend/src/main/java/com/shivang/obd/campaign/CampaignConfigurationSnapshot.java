@@ -114,6 +114,15 @@ public class CampaignConfigurationSnapshot {
     @Column(name = "retry_rules")
     private List<RetryRule> retryRules;
 
+    /**
+     * VB-6D.3: the campaign's configured daily ATTEMPT ceiling, frozen at
+     * snapshot creation. Null means the platform default. Distinct from
+     * {@link #dailyDialLimit}, which is the VB-6C provider-accepted dial
+     * limit and is DNID-scoped.
+     */
+    @Column(name = "max_daily_attempts")
+    private Integer maxDailyAttempts;
+
     // === Type-specific and integration configuration ===
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -162,7 +171,7 @@ public class CampaignConfigurationSnapshot {
         this(campaignType, contactGroupId, didId, contentMode, audioAssetId, ttsTemplateId,
                 scheduleStartDate, scheduleEndDate, dailyStartTime, dailyEndTime, timezone,
                 allowedDaysOfWeek, holidayCalendarId, retryMaxAttempts, retryIntervalSeconds,
-                retryStrategy, null, typeConfig, callOnWhitelistNumbers, dailyDialLimit);
+                retryStrategy, null, null, typeConfig, callOnWhitelistNumbers, dailyDialLimit);
     }
 
     /**

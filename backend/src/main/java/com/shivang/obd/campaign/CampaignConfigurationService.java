@@ -120,6 +120,11 @@ public class CampaignConfigurationService {
                 // this execution's retry behaviour. Null stays null, which
                 // means "no per-category rules" (the flat fields govern).
                 retry.getRules(),
+                // VB-6D.3: the daily campaign-attempt ceiling is frozen here
+                // for the same reason - a later campaign edit must not change
+                // a running execution's attempt budget. Null means the
+                // platform default.
+                campaign.getMaxDailyAttempts(),
                 // Canonical validated JSON (compatibility codec output).
                 validatedTypeConfig.toJson(),
                 Boolean.TRUE.equals(campaign.getCallOnWhitelistNumbers()),

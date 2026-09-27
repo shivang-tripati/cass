@@ -96,6 +96,7 @@ public record FailureClassification(Disposition disposition, RetryRuleCategory c
             CallFailureCode.NO_ELIGIBLE_GATEWAY,
             CallFailureCode.TEMPORARILY_UNAVAILABLE,
             CallFailureCode.DAILY_LIMIT_REACHED,
+            CallFailureCode.DAILY_ATTEMPT_LIMIT_REACHED,
             // pre-acceptance originate: the provider never accepted a call
             CallFailureCode.DIAL_FAILED,
             CallFailureCode.PROVIDER_UNAVAILABLE,

@@ -215,6 +215,25 @@ public enum CallFailureCode {
      */
     DAILY_LIMIT_REACHED(RetryClass.PERMANENT),
 
+    /**
+     * The Voice Blast daily campaign-attempt ceiling
+     * {@code (tenant, contact, calendar day)} — shared across every Voice
+     * Blast campaign of the tenant — was reached (VB-6D.3).
+     *
+     * <p>PERMANENT for the same reason as {@link #DAILY_LIMIT_REACHED}: this
+     * attempt consumed nothing (the conditional UPDATE granted no slot), and
+     * the same day can only begin again at the next calendar day in the
+     * execution snapshot's timezone. A same-day retry could not succeed, so
+     * the permanence class is what stops a same-day retry loop from burning
+     * the schedule.
+     *
+     * <p>Distinct from {@link #DAILY_LIMIT_REACHED}: that one is scoped to
+     * the actual routed DNID and is released if the dial is not accepted;
+     * this one is DNID-agnostic and is consumed at dispatch. See
+     * {@link DailyAttemptSafetyService}.
+     */
+    DAILY_ATTEMPT_LIMIT_REACHED(RetryClass.PERMANENT),
+
     // === Inbound / agent-outbound boundaries (VB-4D / VB-4E) ===
 
     /** No usable inbound route for the called DID. */

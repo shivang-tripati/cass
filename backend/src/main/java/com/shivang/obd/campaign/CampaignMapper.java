@@ -34,6 +34,7 @@ public class CampaignMapper {
         entity.setCampaignType(request.campaignType());
         entity.setCallOnWhitelistNumbers(request.callOnWhitelistNumbers() != null ? request.callOnWhitelistNumbers() : false);
         entity.setDailyDialLimit(request.dailyDialLimit());
+        entity.setMaxDailyAttempts(request.maxDailyAttempts());
         return entity;
     }
 
@@ -74,6 +75,7 @@ public class CampaignMapper {
         clone.setTypeConfig(source.getTypeConfig());
         clone.setIntegrationConfig(source.getIntegrationConfig());
         clone.setDailyDialLimit(source.getDailyDialLimit());
+        clone.setMaxDailyAttempts(source.getMaxDailyAttempts());
         clone.setStatus(CampaignStatus.DRAFT);
         clone.setVersion(source.getVersion() + 1);
         clone.setClonedFromCampaignId(source.getId());
@@ -103,7 +105,8 @@ public class CampaignMapper {
             entity.getCreatedAt(),
             entity.getUpdatedAt(),
             entity.getCallOnWhitelistNumbers(),
-            entity.getDailyDialLimit()
+            entity.getDailyDialLimit(),
+            entity.getMaxDailyAttempts()
         );
     }
 
@@ -124,8 +127,7 @@ public class CampaignMapper {
         JsonNode typeConfig,
         JsonNode integrationConfig,
         Integer dailyDialLimit
-    ) {
-        entity.setName(name);
+    ) {        entity.setName(name);
         entity.setDescription(description);
         entity.setRunMode(normalizeRunMode(runMode));
         entity.setContactGroupId(contactGroupId);

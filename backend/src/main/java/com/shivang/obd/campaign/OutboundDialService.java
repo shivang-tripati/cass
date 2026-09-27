@@ -74,6 +74,11 @@ public class OutboundDialService {
      * (+OK), hold release on every pre-acceptance failure.
      */
     private final DailyDialLimitService dailyDialLimitService;
+    /**
+     * VB-6D.3: the single authority for campaign daily-attempt safety.
+     * Consulted once per dispatch, immediately before the dial is issued.
+     */
+    private final DailyAttemptSafetyService dailyAttemptSafety;
 
     /**
      * Processes all QUEUED attempts that are due for execution.
@@ -287,6 +292,41 @@ public class OutboundDialService {
                     attempt.getAttemptNumber(),
                     new GatewayRoute(selectedRoute.gatewayId(), selectedRoute.freeSwitchGatewayName(), selectedRoute.freeSwitchProfile(), selectedRoute.provider())
             );
+
+            // VB-6D.3: campaign daily-attempt safety. Placed deliberately
+            // AFTER compliance, routing, the VB-6C DNID limit and capacity,
+            // and IMMEDIATELY BEFORE the dial is issued, so the boundary is
+            // exactly "a dial is about to be sent":
+            //   * a DND / whitelist / contact / routing / VB-6C / capacity
+            //     rejection never reaches here, so none consume an attempt (a
+            //     capacity requeue keeps the attempt number and clears
+            //     startedAt, so re-picking-up the same attempt cannot
+            //     double-count either);
+            //   * a dial the provider then rejects DOES consume one, which is
+            //     the point - a number the provider refuses must not be
+            //     dialled forever.
+            // Consumption is a single conditional UPDATE in this same
+            // transaction: no reservation, so nothing can be stranded.
+            DailyAttemptSafetyService.AdmissionResult attemptAdmission =
+                    dailyAttemptSafety.admit(attempt.getTenantId(),
+                            attempt.getContactId(),
+                            campaign.schedule() != null
+                                    ? campaign.schedule().getTimezone() : null,
+                            campaign.maxDailyAttempts());
+            if (attemptAdmission
+                    != DailyAttemptSafetyService.AdmissionResult.ADMITTED) {
+                // The dial was never issued, so return the VB-6C hold and
+                // give the attempt a terminal, non-retryable outcome (the
+                // code is PERMANENT, so no same-day retry loop is created).
+                dailyDialLimitService.releaseReservation(
+                        attempt.getTenantId(), attempt.getContactId(),
+                        actualOutboundDidId, usageDate);
+                markFailed(attempt,
+                        CallFailureCode.DAILY_ATTEMPT_LIMIT_REACHED.name(),
+                        "Voice Blast daily campaign attempt limit reached for this contact today");
+                attemptRepository.save(attempt);
+                return true;
+            }
 
             OutboundDialResponse response = dialer.dial(routedRequest);
 

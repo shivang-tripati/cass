@@ -1,4 +1,24 @@
-# VB-6D — Campaign Safety & Retry Policy — AUDIT
+﻿# VB-6D — Campaign Safety & Retry Policy — AUDIT
+
+> **UPDATE — VB-6D is now COMPLETE.** All three sub-phases shipped:
+> **VB-6D.1** canonical failure taxonomy (commit in `a0c6694`),
+> **VB-6D.2** configurable retry policy (commit in `a0c6694`), and
+> **VB-6D.3** global campaign daily-attempt safety with concurrency-safe
+> admission. See `docs/VB-6D.1-…`, `docs/VB-6D.2-…` and
+> `docs/VB-6D.3-IMPLEMENTATION-REPORT.md`.
+>
+> **OD-1 (the IVR scope conflict that blocked this audit) was resolved by the
+> product**: VB-6D is Campaign Safety & Retry Policy, and IVR is deferred to a
+> later phase. The sequence in §24 was executed as written.
+>
+> **OD-2** (`SWITCHED_OFF` / `NOT_REACHABLE`) remains deliberately open — those
+> categories are configurable but still unreachable, because no reliable
+> carrier cause mapping exists. **OD-3** (whether compliance rejections should be
+> permanent) and **OD-6** (`CALLER_HANGUP`) were closed: OD-6 was proven
+> structurally unreachable from the campaign retry gate, and compliance
+> rejections are now PRE_DISPATCH, so they consume no retry budget.
+>
+> The sections below are the original point-in-time audit record.
 
 **Phase: AUDIT ONLY. No production code, migration, test, entity, service, controller, or
 configuration was modified. The only file written by this phase is this document.**
@@ -279,9 +299,9 @@ daily safety budget. Recorded as **OD-4**.
 | Scope | Voice Blast | Voice Blast (proposed) |
 | Bucket | `(tenant, contact, actual DNID, day)` | `(tenant, contact, day)` — **no DNID** |
 | Counts | **provider-accepted** dials | **attempted dispatches** (recommended) |
-| Ceiling | 3/day, campaign may lower to 1–3 | TBD (**OD-5**) |
+| Ceiling | 3/day, campaign may lower to 1-3 | **10/day, campaign may lower to 1-10 (OD-5 CLOSED)** |
 | Purpose | Subscriber-contact protection, per DNID | Blast-volume protection, DNID-agnostic |
-| Mechanism | bucket row + conditional `UPDATE` | **TBD** |
+| Mechanism | bucket row + conditional `UPDATE` (reserve/confirm/release) | **bucket row + a single conditional `UPDATE`, one counter, no reservation (VB-6D.3)** |
 
 They differ on **bucket key**, **counted event**, and **purpose**. Merging them would corrupt both:
 a DNID-scoped counter cannot express a DNID-agnostic ceiling, and an attempt-scoped counter cannot
@@ -764,33 +784,37 @@ existing conditional updates · the campaign snapshot · `CampaignRuntimeConfigR
 
 ## 23. Open decisions — business confirmation required
 
-| ID | Decision | Why it cannot be decided by engineering | Blocks |
-|---|---|---|---|
-| **OD-1** | **Is VB-6D retry/safety, or IVR/DTMF?** The repo doc says IVR; the brief says retry/safety and forbids IVR. | Product scope | **EVERYTHING** |
-| OD-2 | Are `SWITCHED_OFF` / `NOT_REACHABLE` required as first-class outcomes? Provider cause mapping is unreliable, so this needs a target-carrier list and an accepted error budget. | Product + carrier reality | Per-rule design |
-| OD-3 | Should compliance rejections (`DNC_BLOCKED`, `NOT_WHITELISTED`, `*_BLOCKED`) become `PERMANENT`? | Product policy; VB-6A explicitly deferred it | Taxonomy, retry |
-| OD-4 | Confirm pre-acceptance failures consume **no** daily budget. If so, accept that gateway faults can retry unboundedly within a day, bounded instead by `maxTotalAttempts` + fixed delay. | Cost/compliance judgement | Daily admission |
-| OD-5 | The global ceiling's value, and whether it is DNID-agnostic (recommended) or per-DNID. | Product | Daily admission |
-| OD-6 | Is a **callee answered then hung up** retryable? And should `CALLER_HANGUP` (our hangup) stay retryable? | Product | HANGUP rules |
-| OD-7 | Per-rule retry as a **dedicated table** (queryable, constrained) or a **`typeConfig` JSON block** (no migration, no new entity)? | Trade-off: queryability vs. schema surface | Migration count |
-| OD-8 | Does the daily attempt budget apply to **retry** dispatches as well as first attempts? (Recommended: yes.) | Product | Daily admission |
+| ID | Decision | Why it cannot be decided by engineering | Blocks | Resolution |
+|---|---|---|---|---|
+| **OD-1** | **Is VB-6D retry/safety, or IVR/DTMF?** The repo doc says IVR; the brief says retry/safety and forbids IVR. | Product scope | **EVERYTHING** | **CLOSED - product confirmed VB-6D is Campaign Safety & Retry Policy; IVR deferred** |
+| OD-2 | Are `SWITCHED_OFF` / `NOT_REACHABLE` required as first-class outcomes? Provider cause mapping is unreliable, so this needs a target-carrier list and an accepted error budget. | Product + carrier reality | Per-rule design | **OPEN by decision - configurable but deliberately unmapped; needs a target-carrier cause list** |
+| OD-3 | Should compliance rejections (`DNC_BLOCKED`, `NOT_WHITELISTED`, `*_BLOCKED`) become `PERMANENT`? | Product policy; VB-6A explicitly deferred it | Taxonomy, retry | **CLOSED (conservatively)** - classified PRE_DISPATCH in VB-6D.2, so a compliance rejection consumes no retry budget and is never redialled |
+| OD-4 | Confirm pre-acceptance failures consume **no** daily budget. If so, accept that gateway faults can retry unboundedly within a day, bounded instead by `maxTotalAttempts` + fixed delay. | Cost/compliance judgement | Daily admission | **CLOSED (refined)** - pre-dispatch failures consume no daily budget, and are now additionally bounded by the VB-6D.3 dispatch ceiling, which answers the unbounded-gateway-fault concern |
+| OD-5 | The global ceiling's value, and whether it is DNID-agnostic (recommended) or per-DNID. | Product | Daily admission | **CLOSED (evidence-based)** - DNID-agnostic as recommended; value 10, chosen to match the repository own retry_max_attempts 0..10 bound |
+| OD-6 | Is a **callee answered then hung up** retryable? And should `CALLER_HANGUP` (our hangup) stay retryable? | Product | HANGUP rules | **CLOSED by evidence** - CALLER_HANGUP is unreachable from a campaign attempt (assigned only by InboundCallService, which has no CallAttempt), and a completed call is COMPLETED with a null failure code so it is never a retry candidate. See the VB-6D.3 report section 8 |
+| OD-7 | Per-rule retry as a **dedicated table** (queryable, constrained) or a **`typeConfig` JSON block** (no migration, no new entity)? | Trade-off: queryability vs. schema surface | Migration count | **CLOSED** - JSONB on the execution snapshot (V49): bounded, consumed as a unit, never relationally queried |
+| OD-8 | Does the daily attempt budget apply to **retry** dispatches as well as first attempts? (Recommended: yes.) | Product | Daily admission | **CLOSED as recommended** - a retry is a dispatch and is charged, so retries cannot bypass the ceiling |
 
 ---
 
-## 24. Recommended implementation sequence
+## 24. Recommended implementation sequence — EXECUTED
 
-Derived from the repository, not assumed. **Only valid if OD-1 resolves to retry/safety.**
+Derived from the repository, not assumed. OD-1 resolved to retry/safety, so the sequence ran as
+written. **No externally tracked sub-phase was added beyond 6D.1–6D.3**: what the original plan
+called VB-6D.4 and VB-6D.5 was folded into VB-6D.3, because both turned out to be verification and
+documentation rather than new dispatch logic.
 
-| Phase | Scope | Rationale |
+| Phase | Scope | Status |
 |---|---|---|
-| **VB-6D.1** | **Close the `HANGUP_<cause>` leak.** Map unknown causes to canonical codes (incl. `HANGUP_UNKNOWN`), fix the `VARCHAR(50)` risk, decide `CALLER_HANGUP`. | **Prerequisite for everything.** Per-rule retry is meaningless while codes escape the enum. Small, self-contained, no new persistence. |
-| **VB-6D.2** | **Per-rule retry model + configuration** (table or `typeConfig`, per OD-7), frozen into the snapshot, exposed through the existing `RetryPolicyConfig` DTO and generated OpenAPI. New campaign-owned retry policy service; orchestrator delegates to it. | Builds on a trustworthy taxonomy. Uses the existing freeze + validation pattern proven by VB-6C.2. |
-| **VB-6D.3** | **Global daily attempt admission** — new bucket, VB-6C pattern, `tenant+contact+day`, snapshot timezone, no DNID. Conjunctive AND with VB-6C in `OutboundDialService`. Observability only, no sweeper. | Independent of rules; adds the hard safety ceiling. Must not disturb VB-6C. |
-| **VB-6D.4** | **Compliance / retry integration** — confirm re-evaluation, resolve OD-3 classification, record the whitelist-flag vs list-contents asymmetry. | Small; mostly verification plus a policy decision. |
-| **VB-6D.5** | **Scheduler safety contract + hardening** — codify the §14 preconditions as an ordered, testable contract; add the observability counters. | Last: it validates the whole chain. No new dispatch logic. |
+| **VB-6D.1** | **Close the `HANGUP_<cause>` leak.** Map unknown causes to canonical codes (incl. `HANGUP_UNKNOWN`), fix the `VARCHAR(50)` risk, decide `CALLER_HANGUP`. | **DONE** — `HangupCauseMapper`, `CallFailureCode.canonicalize`. Both adapters fixed; `CALLER_HANGUP` resolution deferred to 6D.3. See `docs/VB-6D.1-FAILURE-TAXONOMY-IMPLEMENTATION.md` |
+| **VB-6D.2** | **Per-rule retry model + configuration** (OD-7 = JSONB), frozen into the snapshot, exposed through the existing `RetryPolicyConfig` DTO and generated OpenAPI. New campaign-owned retry policy service; orchestrator delegates to it. | **DONE** — `RetryPolicyService` (pure, zero collaborators), `RetryRule`, `RetryDecision`, V49. See `docs/VB-6D.2-RETRY-POLICY-IMPLEMENTATION.md` |
+| **VB-6D.3** | **Global daily attempt admission** — new bucket, VB-6C pattern, `tenant+contact+day`, snapshot timezone, no DNID. Conjunctive AND with VB-6C in `OutboundDialService`. Observability only, no sweeper. | **DONE** — `DailyAttemptSafetyService`, V50/V51, two Micrometer counters, no sweeper. See `docs/VB-6D.3-IMPLEMENTATION-REPORT.md` |
+| ~~VB-6D.4~~ | Compliance / retry integration, OD-3 classification, whitelist asymmetry. | **FOLDED INTO VB-6D.3** — OD-3 was already closed in 6D.2 (PRE_DISPATCH), and the ordering proof is in the VB-6D.3 report §5/§6. No new code was warranted |
+| ~~VB-6D.5~~ | Scheduler safety contract + hardening, observability counters. | **FOLDED INTO VB-6D.3** — the counters shipped in 6D.3, and the scheduler was already correct: retries and due attempts both re-enter the identical `processAttempt` path, so the one gate covers both. No second scheduler was added |
 
-**Hard gate carried into every phase:** all VB-6C suites stay green; `ArchitectureTest` stays
-cycle-free; Flyway stays forward-only; no test is weakened to obtain green.
+**Hard gate carried into every phase, and held:** all VB-6C suites stayed green;
+`ArchitectureTest` stayed cycle-free; Flyway stayed forward-only; no test was weakened to obtain
+green. Final state: **1327 tests, 0 failures, 0 errors, 1 skipped**, 0 cycles, Flyway **V51**.
 
 ---
 
@@ -805,6 +829,15 @@ any reconciliation worker.
 ---
 
 ## 26. Final audit verdict
+
+> **UPDATE — SUPERSEDED. VB-6D is COMPLETE.** All three sub-phases shipped:
+> **VB-6D.1** canonical failure taxonomy, **VB-6D.2** configurable retry policy, **VB-6D.3** global
+> campaign daily-attempt safety with concurrency-safe admission. The `BLOCKED` verdict below was
+> conditional on OD-1; the product resolved OD-1 in favour of retry/safety, the prerequisite
+> (`HANGUP_<cause>` leak) was closed, and the sequence in §24 was executed as written. See
+> `docs/VB-6D.3-IMPLEMENTATION-REPORT.md` for the final state.
+>
+> **The original verdict, retained below as the point-in-time record:**
 
 > **UPDATE — VB-6D.1 has since been implemented.** The technical prerequisite this audit called
 > blocking is **closed**: the unbounded `HANGUP_<cause>` leak no longer exists, unknown causes have

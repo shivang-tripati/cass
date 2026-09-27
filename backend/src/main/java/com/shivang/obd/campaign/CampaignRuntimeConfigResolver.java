@@ -62,7 +62,39 @@ public class CampaignRuntimeConfigResolver {
             com.shivang.obd.campaign.config.ConfigSchemaVersion typeConfigSchemaVersion,
             CampaignTypeConfig typeConfig,
             /** Campaign-configured Voice Blast daily dial limit (VB-6C.2); null = platform max. */
-            Integer dailyDialLimit) {
+            Integer dailyDialLimit,
+            /**
+             * Campaign-configured daily campaign-ATTEMPT ceiling (VB-6D.3);
+             * null = platform default. Distinct from {@code dailyDialLimit}:
+             * that one is DNID-scoped provider-accepted dials, this one is
+             * DNID-agnostic dispatches shared across every Voice Blast
+             * campaign of the tenant for that contact-day.
+             */
+            Integer maxDailyAttempts) {
+
+        /**
+         * The pre-VB-6D.3 shape: no daily-attempt override, so the platform
+         * default applies. Retained so existing construction sites keep their
+         * exact previous meaning.
+         */
+        public CampaignRuntimeConfig(
+                UUID campaignId,
+                CampaignType campaignType,
+                UUID contactGroupId,
+                UUID didId,
+                ContentMode contentMode,
+                UUID audioAssetId,
+                UUID ttsTemplateId,
+                Boolean callOnWhitelistNumbers,
+                RetryPolicySpec retryPolicy,
+                ScheduleSpec schedule,
+                com.shivang.obd.campaign.config.ConfigSchemaVersion typeConfigSchemaVersion,
+                CampaignTypeConfig typeConfig,
+                Integer dailyDialLimit) {
+            this(campaignId, campaignType, contactGroupId, didId, contentMode, audioAssetId,
+                    ttsTemplateId, callOnWhitelistNumbers, retryPolicy, schedule,
+                    typeConfigSchemaVersion, typeConfig, dailyDialLimit, null);
+        }
 
         static CampaignRuntimeConfig fromSnapshot(
                 CampaignExecutionConfiguration snapshot) {
@@ -80,7 +112,8 @@ public class CampaignRuntimeConfigResolver {
                     s.scheduleSpec(),
                     com.shivang.obd.campaign.config.ConfigSchemaVersion.V1,
                     parseTypeConfig(s.getCampaignType(), s.getTypeConfig()),
-                    s.getDailyDialLimit());
+                    s.getDailyDialLimit(),
+                    s.getMaxDailyAttempts());
         }
 
         private static CampaignTypeConfig parseTypeConfig(

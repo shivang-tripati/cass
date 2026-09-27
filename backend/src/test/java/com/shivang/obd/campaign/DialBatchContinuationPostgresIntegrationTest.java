@@ -128,6 +128,9 @@ class DialBatchContinuationPostgresIntegrationTest {
     private com.shivang.obd.voice.capacity.VoiceCapacityService voiceCapacity;
     /** VB-6C.1: real ledger over PostgreSQL (admission/confirm/release live). */
     private DailyDialLimitService dailyDialLimitService;
+    private DailyAttemptSafetyService dailyAttemptSafetyService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private VoiceBlastDailyAttemptRepository dailyAttemptRepository;
 
     private static final String PHONE_A = "+919876500001";
     private static final String PHONE_B = "+919876500002";
@@ -157,6 +160,12 @@ class DialBatchContinuationPostgresIntegrationTest {
                 dailyUsageRepository, dailyUsageEntryRepository,
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
 
+        // VB-6D.3: the real daily-attempt gate over the real ledger table,
+        // so this suite exercises both controls against real PostgreSQL.
+        dailyAttemptSafetyService = new DailyAttemptSafetyService(
+                dailyAttemptRepository, dailyDialLimitService,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+
         dialService = new OutboundDialService(
                 attemptRepository, contactRepository, tenantRepository,
                 campaignRepository, executionRepository,
@@ -166,7 +175,7 @@ class DialBatchContinuationPostgresIntegrationTest {
                 dialer, eligibilityService, voiceRoutingService, voiceCapacity,
                 callSessionRepository, callLegRepository,
                 // VB-6C.1: real policy service over the real ledger tables.
-                dailyDialLimitService);
+                dailyDialLimitService, dailyAttemptSafetyService);
     }
 
     /** Seeds tenant, campaign, snapshot (group+DID refs), execution; returns group id. */

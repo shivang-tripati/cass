@@ -139,4 +139,23 @@ private Boolean callOnWhitelistNumbers = false;
  */
 @Column(name = "daily_dial_limit")
 private Integer dailyDialLimit;
+
+/**
+ * Optional campaign-specific ceiling on daily campaign ATTEMPTS for one
+ * contact (VB-6D.3) - a genuinely different control from
+ * {@code dailyDialLimit} above:
+ *
+ * <ul>
+ *   <li>{@code dailyDialLimit} counts provider-ACCEPTED dials, per contact
+ *       <em>per actual DNID</em> (VB-6C);</li>
+ *   <li>{@code maxDailyAttempts} counts DISPATCHES, per contact per day
+ *       across <em>every</em> Voice Blast campaign of the tenant (VB-6D).</li>
+ * </ul>
+ *
+ * Null means "use the platform default". Execution-affecting
+ * configuration: frozen into the immutable execution snapshot, so a later
+ * campaign edit cannot change a running execution's ceiling.
+ */
+@Column(name = "max_daily_attempts")
+private Integer maxDailyAttempts;
 }

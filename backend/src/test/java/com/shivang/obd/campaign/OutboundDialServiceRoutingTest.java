@@ -67,6 +67,14 @@ class OutboundDialServiceRoutingTest {
     /** VB-6C.1: the daily dial-limit policy boundary. */
     @Mock DailyDialLimitService dailyDialLimitService;
 
+    /**
+     * VB-6D.3: the campaign daily-attempt gate. Mocked and defaulting to
+     * ADMITTED so this suite keeps testing the dial pipeline it was written
+     * for; the safety gate's own behaviour (including its ceiling) is proven
+     * in DailyAttemptSafetyTest and the PostgreSQL concurrency suite.
+     */
+    @Mock DailyAttemptSafetyService dailyAttemptSafetyService;
+
     OutboundDialService service;
 
     final UUID tenantId = UUID.fromString("aa000000-0000-4000-8000-00000000000a");
@@ -90,7 +98,7 @@ class OutboundDialServiceRoutingTest {
                 new CampaignRuntimeConfigResolver(configurationService),
                 dialer, eligibilityService,
                 voiceRoutingService, voiceCapacity, callSessionRepository, callLegRepository,
-                dailyDialLimitService);
+                dailyDialLimitService, dailyAttemptSafetyService);
 
         // VB-6C.1 defaults: usage day resolves, bucket admits. Individual
         // tests override the exact behavior they exercise.
@@ -106,6 +114,15 @@ class OutboundDialServiceRoutingTest {
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.anyInt()))
                 .thenReturn(DailyDialLimitService.AdmissionResult.ADMITTED);
+
+        // VB-6D.3: the campaign daily-attempt gate admits by default, so this
+        // suite continues to exercise the dial pipeline. Tests that care about
+        // the ceiling override this.
+        org.mockito.Mockito.lenient()
+                .when(dailyAttemptSafetyService.admit(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(DailyAttemptSafetyService.AdmissionResult.ADMITTED);
 
         // Base attempt fixture: QUEUED and due
         CallAttempt attempt = new CallAttempt();
