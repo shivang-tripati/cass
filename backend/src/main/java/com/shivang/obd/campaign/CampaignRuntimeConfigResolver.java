@@ -161,5 +161,38 @@ public class CampaignRuntimeConfigResolver {
                     ? Optional.of(dtmf)
                     : Optional.empty();
         }
+
+        /**
+         * VB-7A: the CONNECT_BY_AGENT configuration this execution is running,
+         * when the campaign type is {@code CONNECT_BY_AGENT}. Read from the
+         * FROZEN snapshot only, exactly like {@link #asIvr()}.
+         *
+         * <p>Empty for every other campaign type, which is the common case for
+         * the input-driven path: a DTMF or IVR campaign whose terminal action is
+         * {@code CONNECT_BY_AGENT} is a DTMF campaign, so it has no
+         * CONNECT_BY_AGENT configuration and the connect falls back to the
+         * tenant-wide VB-3 selection.
+         */
+        public Optional<com.shivang.obd.campaign.config.ConnectByAgentCampaignConfig>
+                asConnectByAgent() {
+            return typeConfig
+                    instanceof com.shivang.obd.campaign.config.ConnectByAgentCampaignConfig cba
+                    ? Optional.of(cba)
+                    : Optional.empty();
+        }
+
+        /**
+         * VB-7A: the frozen CONNECT_BY_AGENT parameters for this execution, as
+         * the connect boundary consumes them. {@link
+         * com.shivang.obd.voice.agent.AgentConnectRequest#unscoped()} whenever this
+         * execution has no CONNECT_BY_AGENT configuration, so the pre-VB-7A
+         * behaviour is preserved rather than re-implemented.
+         */
+        public com.shivang.obd.voice.agent.AgentConnectRequest agentConnectRequest() {
+            return asConnectByAgent()
+                    .map(cba -> new com.shivang.obd.voice.agent.AgentConnectRequest(
+                            cba.queueId(), cba.ringDurationSeconds()))
+                    .orElseGet(com.shivang.obd.voice.agent.AgentConnectRequest::unscoped);
+        }
     }
 }

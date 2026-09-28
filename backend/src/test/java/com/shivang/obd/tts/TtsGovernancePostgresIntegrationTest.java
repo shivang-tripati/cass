@@ -108,6 +108,8 @@ class TtsGovernancePostgresIntegrationTest {
     @Autowired
     private ContactGroupRepository contactGroupRepository;
     @Autowired
+    private com.shivang.obd.voice.queue.QueueRepository queueRepository;
+    @Autowired
     private EntityManager entityManager;
     @Autowired
     private TransactionTemplate transactionTemplate;
@@ -118,6 +120,8 @@ class TtsGovernancePostgresIntegrationTest {
     private UUID userId;
     private UUID tenantA;
     private UUID tenantB;
+    /** VB-7A: the queue this suite's CONNECT_BY_AGENT campaigns reference. */
+    private UUID agentQueueId;
 
     private static final AtomicInteger SEQ = new AtomicInteger();
 
@@ -149,8 +153,36 @@ class TtsGovernancePostgresIntegrationTest {
             ttsTemplateRepository, allowAll, currentUser,
             new TtsTemplateMapper(), tenantRepository);
 
+        // VB-7A: this suite's campaign is a CONNECT_BY_AGENT one, so the canonical
+        // validator needs the queue read seam to confirm the referenced queue.
+        var queueChecker = new com.shivang.obd.voice.queue.QueueReferenceService(queueRepository);
+        var queueCheckerProvider =
+            new org.springframework.beans.factory.ObjectProvider<
+                com.shivang.obd.voice.agent.AgentQueueReferenceChecker>() {
+                @Override
+                public com.shivang.obd.voice.agent.AgentQueueReferenceChecker getObject() {
+                    return queueChecker;
+                }
+
+                @Override
+                public com.shivang.obd.voice.agent.AgentQueueReferenceChecker getObject(
+                        Object... args) {
+                    return queueChecker;
+                }
+
+                @Override
+                public com.shivang.obd.voice.agent.AgentQueueReferenceChecker getIfAvailable() {
+                    return queueChecker;
+                }
+
+                @Override
+                public com.shivang.obd.voice.agent.AgentQueueReferenceChecker getIfUnique() {
+                    return queueChecker;
+                }
+            };
+
         var resourceValidator = new com.shivang.obd.campaign.CampaignResourceValidationService(
-            null, null, ttsTemplateRepository);
+            null, null, ttsTemplateRepository, queueCheckerProvider);
 
         campaignService = new CampaignService(
             campaignRepository, allowAll,
@@ -165,6 +197,7 @@ class TtsGovernancePostgresIntegrationTest {
 
         tenantA = seedTenant("tts-a").getId();
         tenantB = seedTenant("tts-b").getId();
+        agentQueueId = seedAgentQueue(tenantA);
     }
 
     @AfterEach
@@ -174,6 +207,7 @@ class TtsGovernancePostgresIntegrationTest {
             entityManager.createQuery("DELETE FROM CampaignEntity").executeUpdate();
             entityManager.createQuery("DELETE FROM TtsTemplateEntity").executeUpdate();
             entityManager.createQuery("DELETE FROM ContactGroupEntity").executeUpdate();
+            entityManager.createQuery("DELETE FROM Queue").executeUpdate();
             entityManager.createQuery("DELETE FROM TenantEntity").executeUpdate();
         });
     }
@@ -264,11 +298,34 @@ class TtsGovernancePostgresIntegrationTest {
                 java.time.LocalTime.of(10, 0), java.time.LocalTime.of(18, 0),
                 "Asia/Kolkata", null, null),
             null,
-            // CONNECT_BY_AGENT requires a NON-EMPTY typeConfig object; an empty
-            // object node would itself be rejected as missing configuration.
-            tools.jackson.databind.node.JsonNodeFactory.instance.objectNode()
-                    .put("connectTimeoutSecs", 30),
+            // VB-7A: CONNECT_BY_AGENT no longer accepts a placeholder typeConfig,
+            // so the campaign carries a real, valid one — which needs a queue the
+            // tenant owns. That queue is irrelevant to what this suite asserts; it
+            // exists only so the campaign is legally configurable and the TTS gate
+            // remains the thing under test.
+            connectByAgentTypeConfig(agentQueueId),
             null, true, null);
+    }
+
+    /** VB-7A: the minimal valid typed CONNECT_BY_AGENT configuration. */
+    private static tools.jackson.databind.JsonNode connectByAgentTypeConfig(UUID queueId) {
+        var inner = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        inner.put("queueId", queueId.toString());
+        inner.put("selectionStrategy", "LEAST_ACTIVE_RESERVATIONS");
+        inner.put("ringDurationSeconds", 60);
+        var root = tools.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        root.set("connectByAgent", inner);
+        return root;
+    }
+
+    private UUID seedAgentQueue(UUID tenantId) {
+        return transactionTemplate.execute(tx -> {
+            com.shivang.obd.voice.queue.Queue q = new com.shivang.obd.voice.queue.Queue();
+            q.setTenantId(tenantId);
+            q.setName("q-" + SEQ.incrementAndGet());
+            q.setStatus(com.shivang.obd.voice.queue.QueueStatus.ACTIVE);
+            return queueRepository.saveAndFlush(q).getId();
+        });
     }
 
     // === M. migration + constraints (DB-level invariants) ===

@@ -8,7 +8,6 @@ import com.shivang.obd.did.DidRepository;
 import com.shivang.obd.did.DidStatus;
 import com.shivang.obd.tts.TtsTemplateRepository;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
@@ -59,12 +58,46 @@ import org.springframework.stereotype.Service;
  * future TTS runtime execution is expected to consume this same contract.
  */
 @Service
-@RequiredArgsConstructor
 public class CampaignResourceValidationService {
 
     private final DidRepository didRepository;
     private final AudioAssetRepository audioAssetRepository;
     private final TtsTemplateRepository ttsTemplateRepository;
+    /**
+     * VB-7A: the queue read seam. Optional so a deployment without the
+     * voice/queue layer still constructs; a CONNECT_BY_AGENT campaign in such a
+     * deployment is simply never usable, which is reported rather than thrown.
+     */
+    private final org.springframework.beans.factory.ObjectProvider<
+            com.shivang.obd.voice.agent.AgentQueueReferenceChecker> queueReferenceChecker;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public CampaignResourceValidationService(
+            DidRepository didRepository,
+            AudioAssetRepository audioAssetRepository,
+            TtsTemplateRepository ttsTemplateRepository,
+            org.springframework.beans.factory.ObjectProvider<
+                    com.shivang.obd.voice.agent.AgentQueueReferenceChecker> queueReferenceChecker) {
+        this.didRepository = didRepository;
+        this.audioAssetRepository = audioAssetRepository;
+        this.ttsTemplateRepository = ttsTemplateRepository;
+        this.queueReferenceChecker = queueReferenceChecker;
+    }
+
+    /**
+     * VB-7A: the pre-VB-7A three-repository form, retained so every existing
+     * construction site — including the many unit and PostgreSQL integration
+     * tests that have no interest in queues — keeps compiling and behaving
+     * identically. A {@code null} checker makes {@link #validateQueue} answer
+     * "not usable" rather than throw, which is the correct reading for a
+     * deployment with no queue layer at all.
+     */
+    public CampaignResourceValidationService(
+            DidRepository didRepository,
+            AudioAssetRepository audioAssetRepository,
+            TtsTemplateRepository ttsTemplateRepository) {
+        this(didRepository, audioAssetRepository, ttsTemplateRepository, null);
+    }
 
     /**
      * Fine-grained, resource-scoped validation outcomes. These are internal
@@ -83,7 +116,21 @@ public class CampaignResourceValidationService {
         /** TTS template missing, soft-deleted, or not visible to the tenant. */
         TTS_NOT_AVAILABLE,
         /** TTS template visible to the tenant but not APPROVED. */
-        TTS_NOT_APPROVED
+        TTS_NOT_APPROVED,
+        /**
+         * VB-7A: queue missing, soft-deleted, foreign, or not {@code ACTIVE}.
+         * Reported as a single code on purpose — a queue belonging to another
+         * tenant must be indistinguishable from one that does not exist, so a
+         * campaign configuration can never be used to probe another tenant's
+         * queue inventory. The administratively-inactive case is separated as
+         * {@link #QUEUE_NOT_ACTIVE} because that is a real, own-tenant fact the
+         * operator must be able to act on, and it is exactly the
+         * configuration-vs-runtime distinction the agent side already draws with
+         * {@code AgentAdminStatus} vs {@code AgentAvailability}.
+         */
+        QUEUE_NOT_AVAILABLE,
+        /** VB-7A: queue is owned by the tenant but administratively not ACTIVE. */
+        QUEUE_NOT_ACTIVE
     }
 
     /**
@@ -149,6 +196,46 @@ public class CampaignResourceValidationService {
             return ResourceValidationResult.invalid(ValidationCode.AUDIO_STORAGE_REFERENCE_MISSING);
         }
         return ResourceValidationResult.valid();
+    }
+
+    /**
+     * VB-7A: validates the queue a CONNECT_BY_AGENT campaign names, against the
+     * VB-4B ownership and administrative-lifecycle model.
+     *
+     * <p><b>Administrative facts only.</b> Whether the queue currently has an
+     * available agent, is at capacity, or has any member at all is deliberately
+     * <em>not</em> part of this answer. Those are runtime facts owned by
+     * {@code AgentAdminStatus}/{@code AgentAvailability} and the reservation
+     * lifecycle, and reporting them here would make a campaign permanently
+     * unready whenever the contact centre is closed — which is the precise
+     * conflation {@code AgentAdminStatus} vs {@code AgentAvailability} already
+     * exists to prevent on the agent side.
+     *
+     * <p>Side-effect free and tenant-safe, like every other method here: the
+     * lookup is constrained to the campaign's own tenant, and a queue from
+     * another tenant yields {@link ValidationCode#QUEUE_NOT_AVAILABLE} exactly as
+     * a nonexistent one does.
+     *
+     * @param queueId  queue reference (may be {@code null} → not usable)
+     * @param tenantId campaign tenant (server-derived)
+     * @return valid only when the queue is live, tenant-owned and {@code ACTIVE}
+     */
+    public ResourceValidationResult validateQueue(UUID queueId, UUID tenantId) {
+        if (queueId == null || tenantId == null) {
+            return ResourceValidationResult.invalid(ValidationCode.QUEUE_NOT_AVAILABLE);
+        }
+        var checker = queueReferenceChecker == null
+                ? null : queueReferenceChecker.getIfAvailable();
+        if (checker == null) {
+            // No queue layer in this deployment: a queue reference cannot be
+            // honoured, which is a not-usable answer and never an exception.
+            return ResourceValidationResult.invalid(ValidationCode.QUEUE_NOT_AVAILABLE);
+        }
+        return switch (checker.usabilityOf(queueId, tenantId)) {
+            case USABLE -> ResourceValidationResult.valid();
+            case NOT_ACTIVE -> ResourceValidationResult.invalid(ValidationCode.QUEUE_NOT_ACTIVE);
+            case NOT_ACCESSIBLE -> ResourceValidationResult.invalid(ValidationCode.QUEUE_NOT_AVAILABLE);
+        };
     }
 
     /**

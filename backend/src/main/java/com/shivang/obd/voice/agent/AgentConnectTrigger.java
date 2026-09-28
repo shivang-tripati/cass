@@ -23,4 +23,28 @@ public interface AgentConnectTrigger {
      * @return explainable outcome (selected agent or rejection reason)
      */
     AgentEligibility connectByAgent(UUID callSessionId, UUID attemptId);
+
+    /**
+     * VB-7A: attempts the same connection, honouring a campaign's frozen
+     * CONNECT_BY_AGENT configuration.
+     *
+     * <p>Declared {@code default} and delegating to
+     * {@link #connectByAgent(UUID, UUID)} so the meaning of the existing
+     * two-argument request is <em>unchanged</em>: an implementation that has not
+     * been taught about campaign configuration keeps the tenant-wide VB-3
+     * selection exactly as before, and a DTMF/IVR campaign whose terminal action
+     * is {@code CONNECT_BY_AGENT} — which has no CONNECT_BY_AGENT type config at
+     * all — is unaffected.
+     *
+     * <p>A request naming a queue must reach the queue/ACD authority, never a
+     * direct scan: queue membership, candidate order and the reservation stay
+     * owned by ACD, so a non-member agent can never be selected.
+     *
+     * @param request the frozen per-call parameters; {@code null} is treated as
+     *                {@link AgentConnectRequest#unscoped()}
+     */
+    default AgentEligibility connectByAgent(
+            UUID callSessionId, UUID attemptId, AgentConnectRequest request) {
+        return connectByAgent(callSessionId, attemptId);
+    }
 }

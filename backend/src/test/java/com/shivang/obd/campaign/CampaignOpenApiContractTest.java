@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.shivang.obd.security.config.OpenApiConfig;
+import com.shivang.obd.voice.agent.AgentRingWindow;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -343,5 +344,127 @@ class CampaignOpenApiContractTest {
         assertThat(create.at("/properties/dailyDialLimit/maximum").asInt()).isEqualTo(3);
         assertThat(create.at("/properties/maxDailyAttempts/maximum").asInt()).isEqualTo(10);
         assertThat(create.at("/properties/maxCallDurationSeconds/maximum").asInt()).isEqualTo(3600);
+    }
+
+    // === VB-7A: CONNECT_BY_AGENT campaign configuration documentation ===
+
+    @Test
+    @DisplayName("OAS-7A1: the create schema documents the CONNECT_BY_AGENT configuration: "
+            + "queue reference, selection strategy, and ring window")
+    void connectByAgentConfigurationIsDocumentedOnCreate() throws Exception {
+        JsonNode field = schema(fetchOpenApi(), "CreateCampaignRequest")
+                .at("/properties/typeConfig");
+        assertThat(field.isMissingNode()).isFalse();
+
+        String description = field.at("/description").asText();
+        // The queue reference.
+        assertThat(description).contains("connectByAgent.queueId");
+        // The selection strategy, and the truth that only one exists.
+        assertThat(description).contains("connectByAgent.selectionStrategy")
+                .contains("LEAST_ACTIVE_RESERVATIONS");
+        // The ring window and its bounds.
+        assertThat(description).contains("connectByAgent.ringDurationSeconds").contains("10-240");
+        // The queue is a reference, not a copy of agent state.
+        assertThat(description).contains("owned by this").contains("tenant");
+    }
+
+    @Test
+    @DisplayName("OAS-7A2: the create schema states that agent availability is NOT a readiness "
+            + "condition while the queue's administrative status is")
+    void availabilityIsDocumentedAsNotAReadinessCondition() throws Exception {
+        String description = schema(fetchOpenApi(), "CreateCampaignRequest")
+                .at("/properties/typeConfig/description").asText();
+
+        // The configuration-vs-runtime distinction is the single most
+        // consequential thing an integrator must not get wrong here, so it is
+        // documented rather than left to be inferred.
+        assertThat(description)
+                .contains("Live agent")
+                .contains("availability is NOT a readiness condition")
+                .contains("administrative status IS");
+    }
+
+    @Test
+    @DisplayName("OAS-7A3: the update and response schemas document the same shape and the "
+            + "snapshot guarantee")
+    void connectByAgentConfigurationIsDocumentedOnUpdateAndResponse() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        String update = schema(spec, "UpdateCampaignRequest")
+                .at("/properties/typeConfig/description").asText();
+        assertThat(update)
+                .contains("connectByAgent.queueId")
+                .contains("connectByAgent.selectionStrategy")
+                .contains("connectByAgent.ringDurationSeconds");
+        assertThat(update).contains("immutable configuration snapshot");
+
+        String response = schema(spec, "CampaignResponse")
+                .at("/properties/typeConfig/description").asText();
+        assertThat(response)
+                .contains("connectByAgent.queueId")
+                .contains("LEAST_ACTIVE_RESERVATIONS")
+                .contains("10-240");
+        // Runtime facts must not be promised in a configuration payload.
+        assertThat(response).contains("runtime facts and are never returned");
+    }
+
+    @Test
+    @DisplayName("OAS-7A4: the documented example is the exact contract shape and parses as valid "
+            + "typed configuration")
+    void documentedExampleIsAValidConfiguration() throws Exception {
+        JsonNode example = schema(fetchOpenApi(), "CreateCampaignRequest")
+                .at("/properties/typeConfig/example");
+        assertThat(example.isMissingNode()).isFalse();
+        // The field is an untyped JSON object, so springdoc emits the example as
+        // an inline object rather than a quoted string.
+        assertThat(example.isObject()).isTrue();
+
+        var parsed = (com.shivang.obd.campaign.config.ConnectByAgentCampaignConfig)
+                com.shivang.obd.campaign.config.CampaignTypeConfig.fromTypeConfig(
+                        CampaignType.CONNECT_BY_AGENT, example);
+
+        assertThat(parsed.queueId()).isNotNull();
+        assertThat(parsed.selectionStrategy())
+                .isEqualTo(com.shivang.obd.campaign.config.AgentSelectionStrategy
+                        .LEAST_ACTIVE_RESERVATIONS);
+        assertThat(parsed.effectiveRingSeconds())
+                .isEqualTo(AgentRingWindow.DEFAULT_RING_SECONDS);
+    }
+
+    @Test
+    @DisplayName("OAS-7A5: no new endpoint was introduced; the existing operations, 400 contract "
+            + "and bearer security are unchanged")
+    void noNewEndpointAndSecurityUnchanged() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        // Configuration stays part of the campaign configuration contract.
+        assertThat(spec.at("/paths/~1api~1v1~1campaigns/post").isMissingNode()).isFalse();
+        assertThat(spec.at("/paths/~1api~1v1~1campaigns~1{id}/put").isMissingNode()).isFalse();
+        assertThat(spec.at("/paths/~1api~1v1~1campaigns/post").at("/responses/400")
+                .isMissingNode())
+                .as("invalid CONNECT_BY_AGENT configuration uses the existing 400 contract")
+                .isFalse();
+
+        // No /campaigns/{id}/agents resource was created.
+        assertThat(spec.at("/paths").toString()).doesNotContain("~1agents");
+
+        // Bearer security is unchanged on the campaign operations.
+        JsonNode createOp = spec.at("/paths/~1api~1v1~1campaigns/post");
+        assertThat(createOp.at("/security/0/bearerAuth").isMissingNode()).isFalse();
+    }
+
+    @Test
+    @DisplayName("OAS-7A6: the VB-6C.2/6D.3/6E campaign fields are untouched by this phase")
+    void priorPhaseFieldsSurvive() throws Exception {
+        JsonNode create = schema(fetchOpenApi(), "CreateCampaignRequest");
+        assertThat(create.at("/properties/dailyDialLimit/isMissingNode").isMissingNode())
+                .isTrue();
+        assertThat(create.at("/properties/dailyDialLimit").isMissingNode()).isFalse();
+        assertThat(create.at("/properties/maxDailyAttempts").isMissingNode()).isFalse();
+        assertThat(create.at("/properties/maxCallDurationSeconds").isMissingNode()).isFalse();
+        // and the ring window documented here is not the max-duration field
+        assertThat(create.at("/properties/maxCallDurationSeconds/maximum").asInt())
+                .isEqualTo(3600);
+        assertThat(AgentRingWindow.MAX_RING_SECONDS).isLessThan(3600);
     }
 }

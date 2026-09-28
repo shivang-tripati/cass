@@ -37,7 +37,33 @@ public record CreateCampaignRequest(
     @Valid ScheduleConfig schedule,
     @Valid RetryPolicyConfig retryPolicy,
 
-    /** Required for DTMF and CONNECT_BY_AGENT; non-empty JSON object. */
+    /**
+     * Required for DTMF and CONNECT_BY_AGENT; non-empty JSON object.
+     *
+     * <p>VB-7A: for {@code campaignType = CONNECT_BY_AGENT} this is a
+     * <b>typed, required</b> object — the VB-6A placeholder that accepted any
+     * non-empty payload is gone, and an unrecognised field is rejected with 400.
+     */
+    @Schema(description = "Type-specific configuration, required for DTMF and CONNECT_BY_AGENT.\n\n"
+        + "**CONNECT_BY_AGENT** requires exactly this shape (any other field is rejected):\n"
+        + "- `connectByAgent.queueId` (string, UUID, required) — an existing queue owned by this\n"
+        + "  campaign's tenant. The queue is the source of truth for agent membership and\n"
+        + "  eligibility; the campaign stores only the reference.\n"
+        + "- `connectByAgent.selectionStrategy` (string, required) — only\n"
+        + "  `LEAST_ACTIVE_RESERVATIONS` is supported, the existing deterministic order\n"
+        + "  (fewest active reservations, then agent id). No round-robin, weighted, skills\n"
+        + "  or AI routing exists.\n"
+        + "- `connectByAgent.ringDurationSeconds` (integer, required, 10-240) — how long the\n"
+        + "  answered call rings its reserved agent before AGENT_NO_ANSWER.\n\n"
+        + "A foreign-tenant queue is reported exactly like a nonexistent one. Live agent\n"
+        + "availability is NOT a readiness condition: a campaign stays ready when the queue\n"
+        + "has nobody free right now. The queue's administrative status IS: an inactive or\n"
+        + "disabled queue makes the campaign unready and unschedulable.\n\n"
+        + "Example: {\"connectByAgent\":{\"queueId\":\"3f2504e0-4f89-11d3-9a0c-0305e82c3301\","
+        + "\"selectionStrategy\":\"LEAST_ACTIVE_RESERVATIONS\",\"ringDurationSeconds\":60}}",
+        example = "{\"connectByAgent\": {\"queueId\": \"3f2504e0-4f89-11d3-9a0c-0305e82c3301\", "
+            + "\"selectionStrategy\": \"LEAST_ACTIVE_RESERVATIONS\", "
+            + "\"ringDurationSeconds\": 60}}")
     JsonNode typeConfig,
 
     /** Optional API/webhook integration configuration; no secrets. */

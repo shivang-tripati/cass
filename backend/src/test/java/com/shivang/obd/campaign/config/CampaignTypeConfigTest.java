@@ -101,23 +101,41 @@ class CampaignTypeConfigTest {
 
     // === CONNECT_BY_AGENT ===
 
+    /**
+     * VB-7A replaced the VB-6A placeholder: CONNECT_BY_AGENT used to accept any
+     * non-empty object and carried no configuration at all. It now has a typed
+     * schema, so these assert the new contract rather than the old one.
+     */
     @Test
-    @DisplayName("CONNECT_BY_AGENT: non-empty legacy payload accepted and round-trips untouched")
-    void connectAcceptsLegacyPayload() {
-        var payload = json("{\"legacy\": {\"anything\": true}}");
+    @DisplayName("CONNECT_BY_AGENT: a complete typed configuration is accepted and round-trips")
+    void connectAcceptsTypedConfiguration() {
+        var payload = json("{\"connectByAgent\": {"
+                + "\"queueId\": \"3f2504e0-4f89-11d3-9a0c-0305e82c3301\", "
+                + "\"selectionStrategy\": \"LEAST_ACTIVE_RESERVATIONS\", "
+                + "\"ringDurationSeconds\": 45}}");
         var config = (ConnectByAgentCampaignConfig) CampaignTypeConfig.fromTypeConfig(
                 CampaignType.CONNECT_BY_AGENT, payload);
+        assertThat(config.queueId())
+                .isEqualTo(java.util.UUID.fromString("3f2504e0-4f89-11d3-9a0c-0305e82c3301"));
+        assertThat(config.selectionStrategy())
+                .isEqualTo(AgentSelectionStrategy.LEAST_ACTIVE_RESERVATIONS);
+        assertThat(config.ringDurationSeconds()).isEqualTo(45);
+        assertThat(config.effectiveRingSeconds()).isEqualTo(45);
         assertThat(config.toJson().equals(payload)).isTrue();
     }
 
     @Test
-    @DisplayName("CONNECT_BY_AGENT: absent or empty payload is rejected (existing write contract)")
+    @DisplayName("CONNECT_BY_AGENT: absent, empty or untyped payload is rejected")
     void connectRejectsAbsentPayload() {
         assertThatThrownBy(() -> CampaignTypeConfig.fromTypeConfig(
                 CampaignType.CONNECT_BY_AGENT, null))
                 .isInstanceOf(CampaignConfigInvalidException.class);
         assertThatThrownBy(() -> CampaignTypeConfig.fromTypeConfig(
                 CampaignType.CONNECT_BY_AGENT, json("{}")))
+                .isInstanceOf(CampaignConfigInvalidException.class);
+        // The VB-6A placeholder shape is no longer a valid configuration.
+        assertThatThrownBy(() -> CampaignTypeConfig.fromTypeConfig(
+                CampaignType.CONNECT_BY_AGENT, json("{\"legacy\": {\"anything\": true}}")))
                 .isInstanceOf(CampaignConfigInvalidException.class);
     }
 
@@ -132,7 +150,10 @@ class CampaignTypeConfigTest {
                 CampaignType.DTMF, json("{\"dtmf\": {\"expected\": \"5\"}}")).campaignType())
                 .isEqualTo(CampaignType.DTMF);
         assertThat(CampaignTypeConfig.fromTypeConfig(
-                CampaignType.CONNECT_BY_AGENT, json("{\"x\": 1}")).campaignType())
+                CampaignType.CONNECT_BY_AGENT, json("{\"connectByAgent\": {"
+                        + "\"queueId\": \"3f2504e0-4f89-11d3-9a0c-0305e82c3301\", "
+                        + "\"selectionStrategy\": \"LEAST_ACTIVE_RESERVATIONS\", "
+                        + "\"ringDurationSeconds\": 60}}")).campaignType())
                 .isEqualTo(CampaignType.CONNECT_BY_AGENT);
     }
 }

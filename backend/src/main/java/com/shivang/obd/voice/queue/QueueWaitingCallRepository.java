@@ -139,4 +139,30 @@ public interface QueueWaitingCallRepository
             + "where call_session_id = :sessionId and status = 'WAITING' and deleted_at is null",
             nativeQuery = true)
     int markWaitingRemovedForSession(@Param("sessionId") UUID sessionId);
+
+    /**
+     * VB-7A: an outbound CONNECT_BY_AGENT call finished after ACD had already
+     * assigned it an agent. Conditional {@code ASSIGNED ->} {@code terminal},
+     * idempotent, so a bridged call reports {@code COMPLETED} ("the call left
+     * the queue because it was answered/completed downstream") and a call that
+     * failed after assignment reports {@code REMOVED}.
+     *
+     * <p>Without this an outbound assignment would sit {@code ASSIGNED} forever.
+     * It is inert for the sweeps — {@code InboundAcdRetryScheduler} and
+     * {@code AcdMaintenanceScheduler} both read only {@code WAITING} — but a
+     * permanently {@code ASSIGNED} row misreports the queue's history and would
+     * eventually collide with the partial unique index on
+     * {@code call_session_id} if the same call were ever re-enrolled.
+     *
+     * <p>Only {@code ASSIGNED} rows move; a {@code REMOVED} or {@code WAITING}
+     * row is left alone, so this can never resurrect a call that already left
+     * the queue.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query(value = "update queue_waiting_calls "
+            + "set status = :terminalStatus, updated_at = now() "
+            + "where call_session_id = :sessionId and status = 'ASSIGNED' and deleted_at is null",
+            nativeQuery = true)
+    int markAssignedTerminalForSession(@Param("sessionId") UUID sessionId,
+                                       @Param("terminalStatus") String terminalStatus);
 }

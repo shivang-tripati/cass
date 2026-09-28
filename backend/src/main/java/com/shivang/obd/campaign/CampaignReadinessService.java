@@ -4,6 +4,9 @@ import com.shivang.obd.authz.AccessCheck;
 import com.shivang.obd.authz.AuthorizationService;
 import com.shivang.obd.authz.context.OrganizationContextHolder;
 import com.shivang.obd.contact.ContactGroupRepository;
+import com.shivang.obd.campaign.config.CampaignConfigInvalidException;
+import com.shivang.obd.campaign.config.CampaignTypeConfig;
+import com.shivang.obd.campaign.config.ConnectByAgentCampaignConfig;
 import com.shivang.obd.campaign.dto.CampaignReadinessReason;
 import com.shivang.obd.campaign.dto.CampaignReadinessResponse;
 import com.shivang.obd.common.api.error.CommonErrorCode;
@@ -126,6 +129,10 @@ public class CampaignReadinessService {
 
         // 7. TTS template approval
         checkTtsTemplate(campaign, reasons);
+
+        // 7b. VB-7A: CONNECT_BY_AGENT queue configuration. Only for that
+        //      campaign type; every other type has nothing to check here.
+        checkConnectByAgent(campaign, reasons);
 
         boolean ready = reasons.isEmpty();
         return new CampaignReadinessResponse(campaign.getId(), ready, reasons);
@@ -309,10 +316,72 @@ public class CampaignReadinessService {
     }
 
     /**
+     * VB-7A: a CONNECT_BY_AGENT campaign is ready when its agent connection is
+     * <em>configured</em> correctly — not when an agent happens to be free.
+     *
+     * <p>Three distinct failures are reported separately, because the operator
+     * fixes them differently:
+     * <ul>
+     *   <li>the type config does not parse into the typed CONNECT_BY_AGENT
+     *       configuration at all ({@code INVALID_AGENT_CONFIGURATION});</li>
+     *   <li>the queue it names is missing, soft-deleted, or owned by another
+     *       tenant ({@code AGENT_QUEUE_NOT_AVAILABLE}) — indistinguishable by
+     *       design, so this cannot be used to probe a foreign queue;</li>
+     *   <li>the queue is the tenant's own but administratively not ACTIVE
+     *       ({@code AGENT_QUEUE_NOT_ACTIVE}) — a real own-tenant fact.</li>
+     * </ul>
+     *
+     * <p><b>What is deliberately not checked:</b> whether the queue currently has
+     * an available agent, whether every member is at capacity, whether the queue
+     * is empty, and how deep it is. All of those are runtime facts that change
+     * minute to minute, and a readiness check that failed on them would leave a
+     * correctly configured campaign permanently unready whenever the contact
+     * centre was closed. A momentary vacancy is reported per call, by the ACD
+     * authority, through the existing agent reason codes.
+     */
+    private void checkConnectByAgent(
+            CampaignEntity campaign, List<CampaignReadinessReason> reasons) {
+        if (campaign.getCampaignType() != CampaignType.CONNECT_BY_AGENT) {
+            return;
+        }
+
+        ConnectByAgentCampaignConfig config;
+        try {
+            config = (ConnectByAgentCampaignConfig) CampaignTypeConfig.fromTypeConfig(
+                    CampaignType.CONNECT_BY_AGENT, campaign.getTypeConfig());
+        } catch (CampaignConfigInvalidException e) {
+            reasons.add(new CampaignReadinessReason(
+                    "INVALID_AGENT_CONFIGURATION",
+                    "CONNECT_BY_AGENT configuration is invalid: " + e.getMessage()));
+            return;
+        }
+        if (config == null) {
+            reasons.add(new CampaignReadinessReason(
+                    "INVALID_AGENT_CONFIGURATION",
+                    "CONNECT_BY_AGENT campaigns require a valid agent configuration."));
+            return;
+        }
+
+        // Resource semantics come from the canonical validation boundary (VB-5E,
+        // extended by VB-7A); this boundary only maps the outcome onto a reason.
+        var queue = resourceValidator.validateQueue(config.queueId(), campaign.getTenantId());
+        if (queue.usable()) {
+            return;
+        }
+        switch (queue.code()) {
+            case QUEUE_NOT_ACTIVE -> reasons.add(new CampaignReadinessReason(
+                    "AGENT_QUEUE_NOT_ACTIVE",
+                    "The configured agent queue is not active."));
+            default -> reasons.add(new CampaignReadinessReason(
+                    "AGENT_QUEUE_NOT_AVAILABLE",
+                    "The configured agent queue does not exist or is not available."));
+        }
+    }
+
+    /**
      * Contact Group must exist, not be deleted, and belong to the same tenant.
      */
-    private void checkContactGroup(CampaignEntity campaign, List<CampaignReadinessReason> reasons) {
-        UUID contactGroupId = campaign.getContactGroupId();
+    private void checkContactGroup(CampaignEntity campaign, List<CampaignReadinessReason> reasons) {        UUID contactGroupId = campaign.getContactGroupId();
         if (contactGroupId == null) {
             return; // Not mandatory per existing rules
         }

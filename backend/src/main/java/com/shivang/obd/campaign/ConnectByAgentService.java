@@ -24,7 +24,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.PageRequest;
@@ -45,7 +44,20 @@ import org.springframework.transaction.annotation.Transactional;
  * capacity system (agent reservation is separate from VB-0 voice capacity),
  * tenant isolation on every lookup, idempotent event handling (conditional
  * state transitions + atomic reservation release), one deterministic agent
- * attempt per CONNECT request with a clean failure (no queue invented).
+ * attempt per CONNECT request with a clean failure.
+ * <p>
+ * <b>VB-7A — two selection scopes, one authority.</b> A request may be
+ * <em>unscoped</em> (the original VB-3 behaviour: a tenant-wide eligibility scan,
+ * used by a DTMF/IVR campaign whose terminal action is {@code CONNECT_BY_AGENT}
+ * and which therefore carries no CONNECT_BY_AGENT configuration), or
+ * <em>queue-scoped</em> (a CONNECT_BY_AGENT campaign that named a queue in its
+ * frozen snapshot). The queue-scoped path does <b>not</b> select or reserve here:
+ * it delegates to the ACD authority through
+ * {@link com.shivang.obd.voice.agent.AgentQueueAssignmentTrigger}, so queue
+ * membership, the deterministic order and the atomic reservation claim stay
+ * owned by {@code AcdService} and a non-member agent can never be chosen. This
+ * class still owns everything after the decision — the agent leg, the
+ * originate, and the answer/bridge/hangup callbacks below.
  * <p>
  * Deterministic selection rule (documented contract, see
  * {@link AgentRepository#findEligibleOrdered}): eligible = tenant-scoped,
@@ -54,7 +66,6 @@ import org.springframework.transaction.annotation.Transactional;
  * same state always selects the same agent.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ConnectByAgentService
         implements com.shivang.obd.voice.agent.AgentConnectEvents,
@@ -68,7 +79,23 @@ public class ConnectByAgentService
     @Override
     public com.shivang.obd.voice.agent.AgentEligibility connectByAgent(
             UUID callSessionId, UUID attemptId) {
-        return connect(callSessionId, attemptId);
+        return connect(callSessionId, attemptId, com.shivang.obd.voice.agent.AgentConnectRequest
+                .unscoped());
+    }
+
+    /**
+     * VB-7A: honours a campaign's frozen CONNECT_BY_AGENT configuration. See
+     * {@link com.shivang.obd.voice.agent.AgentConnectTrigger#connectByAgent} —
+     * an unscoped request is exactly the pre-VB-7A two-argument call.
+     */
+    @Override
+    public com.shivang.obd.voice.agent.AgentEligibility connectByAgent(
+            UUID callSessionId, UUID attemptId,
+            com.shivang.obd.voice.agent.AgentConnectRequest request) {
+        return connect(callSessionId, attemptId,
+                request == null
+                        ? com.shivang.obd.voice.agent.AgentConnectRequest.unscoped()
+                        : request);
     }
 
     /** Selection scan width — candidates inspected per connect attempt. */
@@ -86,6 +113,58 @@ public class ConnectByAgentService
     private final AgentLegDialer agentLegDialer;
     private final VoiceMediaController mediaController;
     private final com.shivang.obd.did.DidRepository didRepository;
+    /**
+     * VB-7A: the queue-scoped selection seam. Optional so a deployment without
+     * the ACD/queue layer still starts and still serves the unscoped VB-3 path;
+     * a queue-scoped request in such a deployment is a deterministic
+     * configuration failure, never a crash.
+     */
+    private final org.springframework.beans.factory.ObjectProvider<
+            com.shivang.obd.voice.agent.AgentQueueAssignmentTrigger> queueAssignmentTrigger;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ConnectByAgentService(
+            AgentRepository agentRepository,
+            AgentEndpointRepository endpointRepository,
+            AgentReservationService reservationService,
+            CallSessionRepository callSessionRepository,
+            CallLegRepository callLegRepository,
+            AgentLegDialer agentLegDialer,
+            VoiceMediaController mediaController,
+            com.shivang.obd.did.DidRepository didRepository,
+            org.springframework.beans.factory.ObjectProvider<
+                    com.shivang.obd.voice.agent.AgentQueueAssignmentTrigger>
+                    queueAssignmentTrigger) {
+        this.agentRepository = agentRepository;
+        this.endpointRepository = endpointRepository;
+        this.reservationService = reservationService;
+        this.callSessionRepository = callSessionRepository;
+        this.callLegRepository = callLegRepository;
+        this.agentLegDialer = agentLegDialer;
+        this.mediaController = mediaController;
+        this.didRepository = didRepository;
+        this.queueAssignmentTrigger = queueAssignmentTrigger;
+    }
+
+    /**
+     * VB-7A: the pre-VB-7A eight-argument form, retained so every existing
+     * construction site keeps compiling and behaving identically. A
+     * {@code null} provider means no queue layer, so a queue-scoped request is
+     * a deterministic configuration failure and the unscoped VB-3 path is
+     * unaffected.
+     */
+    public ConnectByAgentService(
+            AgentRepository agentRepository,
+            AgentEndpointRepository endpointRepository,
+            AgentReservationService reservationService,
+            CallSessionRepository callSessionRepository,
+            CallLegRepository callLegRepository,
+            AgentLegDialer agentLegDialer,
+            VoiceMediaController mediaController,
+            com.shivang.obd.did.DidRepository didRepository) {
+        this(agentRepository, endpointRepository, reservationService, callSessionRepository,
+                callLegRepository, agentLegDialer, mediaController, didRepository, null);
+    }
 
     /**
      * Executes a VALID DTMF result as a CONNECT_BY_AGENT request (VB-3).
@@ -97,7 +176,9 @@ public class ConnectByAgentService
      *         reason) — explainability in the VB-0 routing style
      */
     @Transactional
-    public AgentEligibility connect(UUID callSessionId, UUID attemptId) {
+    public AgentEligibility connect(
+            UUID callSessionId, UUID attemptId,
+            com.shivang.obd.voice.agent.AgentConnectRequest request) {
         if (callSessionId == null) {
             return AgentEligibility.rejected(AgentReasons.AGENT_CONFIG_INVALID);
         }
@@ -130,24 +211,63 @@ public class ConnectByAgentService
 
         UUID tenantId = session.getTenantId();
 
-        // 1. Deterministic eligibility scan (tenant-scoped).
-        AgentEligibility selection = selectEligibleAgent(tenantId);
-        if (!selection.isSelected()) {
-            failSession(session, selection.reasonCode(),
-                    "No eligible agent: " + selection.reasonCode());
-            return selection;
+        // 1. Selection. VB-7A: a configured queue delegates the whole decision
+        //    (membership, order, reservation) to the ACD authority; otherwise the
+        //    original tenant-wide eligibility scan runs unchanged.
+        AgentEligibility selection;
+        boolean reservedByAcd = false;
+        if (request != null && request.isQueueScoped()) {
+            var queueTrigger = queueAssignmentTrigger == null
+                    ? null : queueAssignmentTrigger.getIfAvailable();
+            if (queueTrigger == null) {
+                log.warn("Queue-scoped CONNECT_BY_AGENT requested for session {} but no queue "
+                        + "assignment service is configured", session.getId());
+                failSession(session, AgentReasons.AGENT_CONFIG_INVALID,
+                        "Queue-scoped agent connection is not supported in this deployment");
+                return AgentEligibility.rejected(AgentReasons.AGENT_CONFIG_INVALID);
+            }
+            var assignment = queueTrigger.assignToQueue(tenantId, request.queueId(), session.getId());
+            if (!assignment.assigned()) {
+                failSession(session, assignment.reasonCode(),
+                        "No agent available from queue " + request.queueId() + ": "
+                                + assignment.reasonCode());
+                return AgentEligibility.rejected(assignment.reasonCode());
+            }
+            // ACD already holds the reservation. Only resolve the agent row and
+            // its dialable endpoint here — never reserve a second time.
+            selection = resolveAssignedAgent(tenantId, assignment.agentId());
+            if (!selection.isSelected()) {
+                reservationService.releaseForCallSession(
+                        session.getId(), ReleaseReasons.AGENT_CONFIG_INVALID);
+                failSession(session, selection.reasonCode(),
+                        "Assigned agent " + assignment.agentId() + " is not dialable: "
+                                + selection.reasonCode());
+                return selection;
+            }
+            reservedByAcd = true;
+        } else {
+            selection = selectEligibleAgent(tenantId);
+            if (!selection.isSelected()) {
+                failSession(session, selection.reasonCode(),
+                        "No eligible agent: " + selection.reasonCode());
+                return selection;
+            }
         }
         Agent agent = selection.candidate();
         AgentEndpointEntity endpoint = selection.endpoint();
 
-        // 2. Atomic reservation (concurrency-safe).
-        Optional<AgentReservation> reservation =
-                reservationService.reserve(agent.getId(), tenantId, session.getId(), attemptId);
-        if (reservation.isEmpty()) {
-            log.info("Agent {} reservation lost/limited for session {}", agent.getId(), session.getId());
-            failSession(session, AgentReasons.AGENT_BUSY,
-                    "Agent " + agent.getId() + " could not be reserved");
-            return AgentEligibility.rejected(AgentReasons.AGENT_BUSY);
+        // 2. Atomic reservation (concurrency-safe). Skipped when ACD already
+        //    claimed the hold as part of its own assignment.
+        if (!reservedByAcd) {
+            Optional<AgentReservation> reservation =
+                    reservationService.reserve(agent.getId(), tenantId, session.getId(), attemptId);
+            if (reservation.isEmpty()) {
+                log.info("Agent {} reservation lost/limited for session {}",
+                        agent.getId(), session.getId());
+                failSession(session, AgentReasons.AGENT_BUSY,
+                        "Agent " + agent.getId() + " could not be reserved");
+                return AgentEligibility.rejected(AgentReasons.AGENT_BUSY);
+            }
         }
 
         // 3. Create the agent leg (explicit role — never positional inference).
@@ -159,6 +279,11 @@ public class ConnectByAgentService
         agentLeg.setStatus(CallLegStatus.DIALING);
         agentLeg.setTarget(endpoint.getDialTarget());
         agentLeg.setAgentId(agent.getId());
+        // VB-7A: record the queue that produced this leg, so an agent leg is
+        // always attributable to the campaign configuration that asked for it.
+        if (request != null && request.isQueueScoped()) {
+            agentLeg.setQueueId(request.queueId());
+        }
         agentLeg.setInitiatedAt(Instant.now());
         agentLeg = callLegRepository.save(agentLeg);
         reservationService.attachLeg(agentLeg.getId(), session.getId());
@@ -360,6 +485,9 @@ public class ConnectByAgentService
                 });
 
         reservationService.markActiveForCallSession(callSessionId);
+        // VB-7A: the call left the queue because it was answered and completed
+        // downstream. Bookkeeping only — no ACD sweep reads an ASSIGNED row.
+        closeQueuePresence(callSessionId, true);
         log.info("Bridge established (callSession={}, agentChannel={})",
                 callSessionId, agentUuid == null ? "unknown" : maskUuid(agentUuid));
     }
@@ -393,6 +521,30 @@ public class ConnectByAgentService
             log.debug("Agent {} has no dialable endpoint — skipped", candidate.getId());
         }
         return AgentEligibility.rejected(AgentReasons.AGENT_ENDPOINT_INVALID);
+    }
+
+    /**
+     * VB-7A: resolves the agent ACD just assigned, together with a dialable
+     * endpoint. Membership, availability and capacity were already enforced by
+     * ACD; this only materialises the two rows needed to originate a leg, and
+     * re-checks endpoint dialability because ACD does not own endpoints.
+     */
+    private AgentEligibility resolveAssignedAgent(UUID tenantId, UUID agentId) {
+        Agent agent = agentRepository
+                .findByIdAndTenantIdAndDeletedAtIsNull(agentId, tenantId)
+                .orElse(null);
+        if (agent == null) {
+            return AgentEligibility.rejected(AgentReasons.AGENT_UNAVAILABLE);
+        }
+        Optional<AgentEndpointEntity> endpoint = endpointRepository
+                .findByAgentIdAndTenantIdAndEnabledTrueAndDeletedAtIsNull(agentId, tenantId)
+                .stream()
+                .filter(e -> DIALABLE_ENDPOINTS.contains(e.getEndpointType()))
+                .filter(e -> e.getDialTarget() != null && !e.getDialTarget().isBlank())
+                .findFirst();
+        return endpoint
+                .map(e -> AgentEligibility.selected(agent, e))
+                .orElseGet(() -> AgentEligibility.rejected(AgentReasons.AGENT_ENDPOINT_INVALID));
     }
 
     /**
@@ -437,6 +589,9 @@ public class ConnectByAgentService
         session.setFailureReason(failureReason);
         session.setEndedAt(Instant.now());
         callSessionRepository.save(session);
+        // VB-7A: the call left the queue without completing. No-op for the
+        // unscoped path and for deployments without a queue layer.
+        closeQueuePresence(session.getId(), false);
         // The caller leg teardown follows the same path as other failures:
         // terminate the caller channel; its CHANNEL_HANGUP finalizes the
         // attempt and releases the voice reservation authoritatively.
@@ -459,8 +614,28 @@ public class ConnectByAgentService
                 });
     }
 
-    private Optional<CallLeg> findAgentLeg(UUID sessionId) {
-        return callLegRepository.findByCallSessionIdAndLegTypeAndDeletedAtIsNull(sessionId, CallLegType.AGENT)
+    /**
+     * VB-7A: tells the queue domain that this call has left the queue, when and
+     * only when it was queue-scoped. Best-effort and never fatal: the waiting-call
+     * row is bookkeeping, and a failure to record it must not change the outcome
+     * of a call that has already been bridged or already failed.
+     */
+    private void closeQueuePresence(UUID callSessionId, boolean callCompleted) {
+        if (queueAssignmentTrigger == null) {
+            return;
+        }
+        try {
+            var trigger = queueAssignmentTrigger.getIfAvailable();
+            if (trigger != null) {
+                trigger.closeQueuePresence(callSessionId, callCompleted);
+            }
+        } catch (RuntimeException e) {
+            log.warn("Recording queue presence close failed for session {}: {}",
+                    callSessionId, e.getMessage());
+        }
+    }
+
+    private Optional<CallLeg> findAgentLeg(UUID sessionId) {        return callLegRepository.findByCallSessionIdAndLegTypeAndDeletedAtIsNull(sessionId, CallLegType.AGENT)
                 .stream()
                 .findFirst();
     }

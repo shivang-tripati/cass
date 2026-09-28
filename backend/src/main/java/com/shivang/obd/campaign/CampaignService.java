@@ -4,6 +4,8 @@ import com.shivang.obd.authz.AccessCheck;
 import com.shivang.obd.authz.AuthorizationService;
 import com.shivang.obd.authz.context.OrganizationContextHolder;
 import com.shivang.obd.contact.ContactGroupRepository;
+import com.shivang.obd.campaign.config.CampaignTypeConfig;
+import com.shivang.obd.campaign.config.ConnectByAgentCampaignConfig;
 import com.shivang.obd.campaign.dto.CampaignResponse;
 import com.shivang.obd.campaign.dto.CreateCampaignRequest;
 import com.shivang.obd.campaign.dto.RetryPolicyConfig;
@@ -122,6 +124,9 @@ public class CampaignService {
         validateDidReference(tenantId, request.didId());
         validateContentReferences(tenantId, request.contentMode(),
             request.audioAssetId(), request.ttsTemplateId());
+        // VB-7A: queue ownership + administrative lifecycle, the same canonical
+        // rule as the DID and content references above.
+        validateAgentQueueReference(request.campaignType(), request.typeConfig(), tenantId);
         // VB-6C.2: canonical domain rule for the daily dial limit — guards
         // entities constructed outside REST (DTO validation covers that path;
         // the V48 DB CHECK is the last line of defense).
@@ -212,6 +217,9 @@ public class CampaignService {
         validateDidReference(entity.getTenantId(), request.didId());
         validateContentReferences(entity.getTenantId(), request.contentMode(),
             request.audioAssetId(), request.ttsTemplateId());
+        // VB-7A: same canonical rule on the update path.
+        validateAgentQueueReference(
+            entity.getCampaignType(), request.typeConfig(), entity.getTenantId());
         // VB-6C.2: same canonical domain rule on the update path.
         DailyDialLimitService.assertConfigurable(request.dailyDialLimit());
         // VB-6D.2: same canonical domain rule for retry policy.
@@ -498,9 +506,50 @@ public class CampaignService {
         validateContent(entity.getCampaignType(), entity.getContentMode(),
             entity.getAudioAssetId(), entity.getTtsTemplateId());
         validateTypeConfig(entity.getCampaignType(), entity.getTypeConfig());
+        validateAgentQueueReference(
+            entity.getCampaignType(), entity.getTypeConfig(), entity.getTenantId());
         validateScheduleWindow(schedule.getStartDate(), schedule.getEndDate(),
             schedule.getStartTime(), schedule.getEndTime(), schedule.getTimezone());
         validateRetrySpec(entity.getRetryPolicy());
+    }
+
+    /**
+     * VB-7A: CONNECT_BY_AGENT queue ownership and administrative-lifecycle
+     * check, applied consistently at write time, at activation, and — through
+     * readiness — again at execution creation.
+     * <p>
+     * {@link #validateTypeConfig} has already proved the type config parses into
+     * the typed {@link ConnectByAgentCampaignConfig}, so the queue reference is
+     * known to be present and well-formed. What remains is delegated to the
+     * canonical {@link CampaignResourceValidationService} and mapped onto the
+     * existing non-leaking error — exactly the shape of
+     * {@link #validateDidReference}, and with the same rule that
+     * SUPER_ADMIN authority does not relax the ownership invariant.
+     * <p>
+     * Re-checked at activation because it can change after creation, so a
+     * campaign whose queue is disabled while it sits SCHEDULED becomes
+     * un-executable rather than failing every dial.
+     * <p>
+     * Live agent availability is <b>not</b> part of this gate. Nobody being
+     * available right now is a runtime condition, and blocking a campaign on it
+     * would make a correctly configured campaign impossible to save or schedule
+     * whenever the contact centre is closed.
+     */
+    private void validateAgentQueueReference(
+            CampaignType type, JsonNode typeConfig, UUID tenantId) {
+        if (type != CampaignType.CONNECT_BY_AGENT) {
+            return;
+        }
+        var config = (ConnectByAgentCampaignConfig) CampaignTypeConfig.fromTypeConfig(
+                CampaignType.CONNECT_BY_AGENT, typeConfig);
+        var result = resourceValidator.validateQueue(config.queueId(), tenantId);
+        if (result.usable()) {
+            return;
+        }
+        throw business(result.code() == CampaignResourceValidationService.ValidationCode
+                .QUEUE_NOT_ACTIVE
+                ? "The configured agent queue is not active."
+                : "Agent queue does not exist or is not available.");
     }
 
     /**

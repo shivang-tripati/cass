@@ -26,6 +26,21 @@ public record CampaignResponse(
     UUID ttsTemplateId,
     ScheduleConfig schedule,
     RetryPolicyConfig retryPolicy,
+    /**
+     * VB-7A: for {@code campaignType = CONNECT_BY_AGENT} this echoes the typed
+     * agent configuration exactly as stored — the queue reference, the selection
+     * strategy, and the ring window. No agent, membership, availability or
+     * capacity state is ever included.
+     */
+    @Schema(description = "Type-specific configuration.\n\n"
+        + "For **CONNECT_BY_AGENT** it is the typed agent configuration: "
+        + "`connectByAgent.queueId` (the referenced queue, owned by this tenant), "
+        + "`connectByAgent.selectionStrategy` (only `LEAST_ACTIVE_RESERVATIONS` is "
+        + "supported), and `connectByAgent.ringDurationSeconds` (10-240). Live agent "
+        + "availability and queue depth are runtime facts and are never returned here.",
+        example = "{\"connectByAgent\": {\"queueId\": \"3f2504e0-4f89-11d3-9a0c-0305e82c3301\", "
+            + "\"selectionStrategy\": \"LEAST_ACTIVE_RESERVATIONS\", "
+            + "\"ringDurationSeconds\": 60}}")
     JsonNode typeConfig,
     JsonNode integrationConfig,
     Instant createdAt,

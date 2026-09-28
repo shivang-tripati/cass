@@ -35,7 +35,25 @@ public record UpdateCampaignRequest(
     @Valid ScheduleConfig schedule,
     @Valid RetryPolicyConfig retryPolicy,
 
-    /** Required (non-empty JSON object) for DTMF and CONNECT_BY_AGENT. */
+    /**
+     * Required (non-empty JSON object) for DTMF and CONNECT_BY_AGENT.
+     *
+     * <p>VB-7A: for {@code campaignType = CONNECT_BY_AGENT} this is a typed,
+     * required object. An edit only affects executions created afterwards —
+     * running executions keep their frozen snapshot.
+     */
+    @Schema(description = "Type-specific configuration, required for DTMF and CONNECT_BY_AGENT.\n\n"
+        + "**CONNECT_BY_AGENT** requires exactly this shape (any other field is rejected):\n"
+        + "- `connectByAgent.queueId` (string, UUID, required) — an existing queue owned by this\n"
+        + "  campaign's tenant; foreign-tenant queues are reported as unavailable.\n"
+        + "- `connectByAgent.selectionStrategy` (string, required) — only\n"
+        + "  `LEAST_ACTIVE_RESERVATIONS` is supported.\n"
+        + "- `connectByAgent.ringDurationSeconds` (integer, required, 10-240).\n\n"
+        + "Changing any of these does not alter an execution that already exists: each\n"
+        + "execution owns an immutable configuration snapshot.",
+        example = "{\"connectByAgent\": {\"queueId\": \"3f2504e0-4f89-11d3-9a0c-0305e82c3301\", "
+            + "\"selectionStrategy\": \"LEAST_ACTIVE_RESERVATIONS\", "
+            + "\"ringDurationSeconds\": 90}}")
     JsonNode typeConfig,
 
     /** Optional API/webhook integration configuration; no secrets. */
