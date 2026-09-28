@@ -6,6 +6,7 @@ import com.shivang.obd.campaign.DailyDialLimit;
 import tools.jackson.databind.JsonNode;
 import com.shivang.obd.campaign.CampaignRunMode;
 import com.shivang.obd.campaign.CampaignType;
+import com.shivang.obd.campaign.config.CampaignIntegrationConfig;
 import com.shivang.obd.campaign.ContentMode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -77,8 +78,40 @@ public record CreateCampaignRequest(
             + "\"ringDurationSeconds\": 60}}")
     JsonNode typeConfig,
 
-    /** Optional API/webhook integration configuration; no secrets. */
-    JsonNode integrationConfig,
+    /**
+     * Optional typed integration configuration: an outbound webhook and the
+     * campaign's report privacy policy.
+     *
+     * <p><b>Configuration only — nothing is delivered.</b> VB-7C.2 implements no
+     * webhook transport, signer, retry, queue or worker, and no report
+     * generation or export. A fully valid webhook block here records intent and
+     * causes no HTTP traffic from this platform.
+     *
+     * <p>{@code webhook} requires an absolute {@code http}/{@code https}
+     * {@code endpoint} and at least one event <em>only</em> when
+     * {@code enabled} is true; an endpoint never enables a webhook by itself.
+     * Events are drawn from the public vocabulary
+     * ({@code campaign.attempt.completed}, {@code campaign.attempt.failed},
+     * {@code campaign.attempt.cancelled}) and are not delivered yet.
+     *
+     * <p>Unknown fields are rejected. This object stores <b>no secrets</b>:
+     * there is no field for a credential, and endpoints carrying embedded
+     * credentials are refused.
+     *
+     * <p>Omit entirely for no integrations. {@code reportPrivacy} defaults to
+     * {@code FULL}, which is the platform's current behaviour — existing
+     * attempt-listing responses are unaffected either way.
+     */
+    @Schema(description = "Optional typed integration configuration. Configuration only: "
+        + "**no webhook is delivered and no report is generated** by this API. "
+        + "`webhook.enabled` is the only switch — an endpoint never enables a webhook by "
+        + "itself. When enabled, `webhook.endpoint` must be an absolute http(s) URL and "
+        + "`webhook.events` must select at least one event from the public vocabulary. "
+        + "Selecting an event records intent; it is not a delivery guarantee. "
+        + "`reportPrivacy.policy` is FULL (default, unchanged behaviour) or MASKED, "
+        + "describing what a future reporting subsystem should show. Unknown fields are "
+        + "rejected, and no secret, API key or signing credential can be stored here.")
+    CampaignIntegrationConfig integrationConfig,
 
     /** When true, only numbers on tenant whitelist may be dialed (subject to higher blocks). */
     Boolean callOnWhitelistNumbers,
@@ -147,7 +180,7 @@ public record CreateCampaignRequest(
             ScheduleConfig schedule,
             RetryPolicyConfig retryPolicy,
             JsonNode typeConfig,
-            JsonNode integrationConfig,
+            CampaignIntegrationConfig integrationConfig,
             Boolean callOnWhitelistNumbers,
             Integer dailyDialLimit) {
         this(name, description, campaignType, runMode, contactGroupId, didId, contentMode,
@@ -173,7 +206,7 @@ public record CreateCampaignRequest(
             ScheduleConfig schedule,
             RetryPolicyConfig retryPolicy,
             JsonNode typeConfig,
-            JsonNode integrationConfig,
+            CampaignIntegrationConfig integrationConfig,
             Boolean callOnWhitelistNumbers,
             Integer dailyDialLimit,
             Integer maxDailyAttempts) {

@@ -6,6 +6,7 @@ import com.shivang.obd.campaign.DailyDialLimit;
 import tools.jackson.databind.JsonNode;
 import com.shivang.obd.campaign.CampaignRunMode;
 import com.shivang.obd.campaign.ContentMode;
+import com.shivang.obd.campaign.config.CampaignIntegrationConfig;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -59,8 +60,22 @@ public record UpdateCampaignRequest(
         example = "{\"missedCall\": {\"ringDurationSeconds\": 30}}")
     JsonNode typeConfig,
 
-    /** Optional API/webhook integration configuration; no secrets. */
-    JsonNode integrationConfig,
+    /**
+     * Optional typed integration configuration. Replaces the campaign's whole
+     * integration configuration; see {@code CreateCampaignRequest} for the full
+     * contract.
+     *
+     * <p>Configuration only: no webhook is delivered and no report is generated.
+     * Changes apply to <em>future</em> executions only, exactly as with every
+     * other campaign field.
+     */
+    @Schema(description = "Optional typed integration configuration, replacing the "
+        + "campaign's whole integration block. Configuration only: no webhook is delivered "
+        + "and no report is generated. `webhook.enabled` is the only switch; when enabled, an "
+        + "absolute http(s) `webhook.endpoint` and at least one event are required, and "
+        + "selecting an event is not a delivery guarantee. `reportPrivacy.policy` is FULL "
+        + "(default) or MASKED. Unknown fields are rejected and no secret can be stored.")
+    CampaignIntegrationConfig integrationConfig,
 
     /**
      * Optional campaign-specific Voice Blast daily dial limit. Valid
@@ -120,7 +135,7 @@ public record UpdateCampaignRequest(
             ScheduleConfig schedule,
             RetryPolicyConfig retryPolicy,
             JsonNode typeConfig,
-            JsonNode integrationConfig,
+            CampaignIntegrationConfig integrationConfig,
             Integer dailyDialLimit) {
         this(name, description, runMode, contactGroupId, didId, contentMode, audioAssetId,
                 ttsTemplateId, schedule, retryPolicy, typeConfig, integrationConfig,
@@ -144,7 +159,7 @@ public record UpdateCampaignRequest(
             ScheduleConfig schedule,
             RetryPolicyConfig retryPolicy,
             JsonNode typeConfig,
-            JsonNode integrationConfig,
+            CampaignIntegrationConfig integrationConfig,
             Integer dailyDialLimit,
             Integer maxDailyAttempts) {
         this(name, description, runMode, contactGroupId, didId, contentMode, audioAssetId,

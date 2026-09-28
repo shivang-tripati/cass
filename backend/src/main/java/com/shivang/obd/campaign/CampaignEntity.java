@@ -99,9 +99,21 @@ public class CampaignEntity extends AuditableEntity {
     private JsonNode typeConfig;
 
     /**
-     * Optional API/webhook integration configuration. Extensible JSON
-     * payload; secrets are prohibited here — credentials belong to the
-     * platform's credential abstraction when that exists.
+     * Campaign integration and reporting-privacy configuration.
+     *
+     * <p>VB-7C.2: the column is unchanged, but its content is no longer free-form.
+     * It is written only as the canonical serialization of the typed
+     * {@link com.shivang.obd.campaign.config.CampaignIntegrationConfig}, which parses
+     * strictly and rejects unknown fields. The previously documented "secrets are
+     * prohibited here" is therefore now an <em>enforced</em> contract rather than a
+     * comment, and no credential can be persisted through this column.
+     *
+     * <p>Storage stays {@code JSONB} deliberately: no migration is required, and
+     * this mirrors how {@code type_config} already carries typed configuration.
+     *
+     * <p>Read it through
+     * {@link com.shivang.obd.campaign.config.CampaignIntegrationConfig#fromJson}
+     * rather than by casting the node.
      */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "integration_config")

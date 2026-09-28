@@ -592,4 +592,174 @@ class CampaignOpenApiContractTest {
                 .isEqualTo(com.shivang.obd.campaign.config.MissedCallRingWindow
                         .DEFAULT_RING_SECONDS);
     }
+
+    // === VB-7C.2: integration configuration contract ===
+
+    @Test
+    @DisplayName("OAS-7C.2-1: the generated document exposes a typed integrationConfig on "
+            + "create, update and response")
+    void integrationConfigIsTypedOnEveryCampaignSchema() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        for (String dto : new String[] {"CreateCampaignRequest", "UpdateCampaignRequest",
+                "CampaignResponse"}) {
+            JsonNode property = spec.at("/components/schemas/" + dto
+                    + "/properties/integrationConfig");
+            assertThat(property.isMissingNode())
+                    .as("%s must declare integrationConfig", dto)
+                    .isFalse();
+            // A typed object, NOT the free-form JSON the field used to be.
+            // springdoc emits a $ref to a generated component, so it is resolved
+            // before the shape is asserted.
+            assertThat(property.at("/$ref").asText())
+                    .as("%s.integrationConfig must reference a typed schema", dto)
+                    .isNotBlank();
+            JsonNode resolved = resolve(spec, property);
+            assertThat(resolved.at("/type").asText())
+                    .as("%s.integrationConfig must be an object, not an arbitrary blob", dto)
+                    .isEqualTo("object");
+            assertThat(resolved.at("/properties/webhook").isMissingNode())
+                    .as("%s.integrationConfig must describe the webhook block", dto)
+                    .isFalse();
+            assertThat(resolved.at("/properties/reportPrivacy").isMissingNode())
+                    .as("%s.integrationConfig must describe the report privacy block", dto)
+                    .isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("OAS-7C.2-2: the generated document describes the webhook and reportPrivacy "
+            + "structure")
+    void integrationConfigStructureIsDocumented() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        String configSchema = firstSchemaNameContaining(spec, "CampaignIntegrationConfig");
+        assertThat(configSchema)
+                .as("a CampaignIntegrationConfig schema must be generated")
+                .isNotNull();
+
+        JsonNode schema = spec.at("/components/schemas/" + configSchema);
+        assertThat(schema.at("/properties/webhook").isMissingNode()).isFalse();
+        assertThat(schema.at("/properties/reportPrivacy").isMissingNode()).isFalse();
+
+        JsonNode webhook = resolve(spec, schema.at("/properties/webhook"));
+        assertThat(webhook.at("/properties/enabled").isMissingNode()).isFalse();
+        assertThat(webhook.at("/properties/endpoint").isMissingNode()).isFalse();
+        assertThat(webhook.at("/properties/events").isMissingNode()).isFalse();
+
+        JsonNode privacy = resolve(spec, schema.at("/properties/reportPrivacy"));
+        assertThat(privacy.at("/properties/policy").isMissingNode()).isFalse();
+    }
+
+    @Test
+    @DisplayName("OAS-7C.2-3: the event field documents the PUBLIC vocabulary, and no Java "
+            + "enum name is exposed anywhere in the document")
+    void eventVocabularyIsPublic() throws Exception {
+        String text = fetchOpenApi().toString();
+
+        // The contract's own vocabulary must be discoverable in the document.
+        assertThat(text)
+                .contains("campaign.attempt.completed")
+                .contains("campaign.attempt.failed")
+                .contains("campaign.attempt.cancelled");
+
+        // And no internal constant may appear in the public contract.
+        for (String internal : new String[] {"ATTEMPT_COMPLETED", "ATTEMPT_FAILED",
+                "ATTEMPT_CANCELLED", "CAMPAIGN_CREATED", "CAMPAIGN_STATUS_CHANGED"}) {
+            assertThat(text)
+                    .as("internal name %s must not appear in the generated document", internal)
+                    .doesNotContain(internal);
+        }
+    }
+
+    @Test
+    @DisplayName("OAS-7C.2-4: the report privacy policy documents its supported values")
+    void privacyPolicyValuesAreDocumented() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        // springdoc does not emit a standalone component for the enum, so the
+        // documented values are asserted where they are consumed.
+        JsonNode policy = spec.at("/components/schemas/ReportPrivacyConfig/properties/policy");
+        assertThat(policy.isMissingNode())
+                .as("ReportPrivacyConfig.policy must be documented")
+                .isFalse();
+        assertThat(policy.at("/type").asText()).isEqualTo("string");
+        assertThat(policy.at("/enum").toString())
+                .as("both supported policies must be listed, in their public form")
+                .contains("FULL")
+                .contains("MASKED");
+    }
+
+    @Test
+    @DisplayName("OAS-7C.2-5: the documentation states that delivery is NOT implemented, so a "
+            + "reader cannot mistake configuration for a delivery guarantee")
+    void deliveryIsDocumentedAsUnimplemented() throws Exception {
+        String description = fetchOpenApi().at("/components/schemas/CreateCampaignRequest"
+                + "/properties/integrationConfig/description").asText();
+
+        assertThat(description)
+                .as("the contract must not imply a webhook is delivered")
+                .contains("no webhook is delivered")
+                .contains("not a delivery guarantee");
+        assertThat(description).contains("no report is generated");
+    }
+
+    @Test
+    @DisplayName("OAS-7C.2-6: the existing attempt-listing contract is UNCHANGED - report "
+            + "privacy is configuration only")
+    void attemptListingContractUnchanged() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        // The attempt response still exposes its contact reference exactly as
+        // before: this phase adds configuration and filters nothing.
+        JsonNode attemptSchema = spec.at("/components/schemas/CallAttemptResponse");
+        assertThat(attemptSchema.isMissingNode())
+                .as("CallAttemptResponse must still exist")
+                .isFalse();
+        assertThat(attemptSchema.at("/properties/contactId").isMissingNode())
+                .as("attempt contact visibility is unchanged by VB-7C.2")
+                .isFalse();
+        // And report privacy must not have leaked into it.
+        assertThat(attemptSchema.toString())
+                .doesNotContain("reportPrivacy")
+                .doesNotContain("privacyPolicy");
+    }
+
+    @Test
+    @DisplayName("OAS-7C.2-7: no new endpoint was introduced, and the existing security and "
+            + "400 contracts are intact")
+    void vb7c2NoNewEndpointAndSecurityUnchanged() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        assertThat(spec.at("/paths/~1api~1v1~1campaigns/post/security/0/bearerAuth")
+                .isMissingNode()).isFalse();
+        assertThat(spec.at("/paths/~1api~1v1~1campaigns/post/responses/400").isMissingNode())
+                .isFalse();
+        // No webhook, integration or report resource was added.
+        String paths = spec.at("/paths").toString();
+        assertThat(paths)
+                .doesNotContain("~1webhook")
+                .doesNotContain("~1integrations")
+                .doesNotContain("~1reports")
+                .doesNotContain("~1exports");
+    }
+
+    /** Resolves a possibly-{$ref} property to its schema. */
+    private JsonNode resolve(JsonNode spec, JsonNode node) {
+        JsonNode ref = node.at("/$ref");
+        if (ref.isMissingNode()) {
+            return node;
+        }
+        return spec.at("/components/schemas/"
+                + ref.asText().replace("#/components/schemas/", ""));
+    }
+
+    /** Finds a generated schema whose name contains the given fragment. */
+    private String firstSchemaNameContaining(JsonNode spec, String fragment) {
+        for (var entry : spec.at("/components/schemas").properties()) {
+            if (entry.getKey().contains(fragment)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
 }

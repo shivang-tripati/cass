@@ -5,6 +5,7 @@ import com.shivang.obd.authz.AuthorizationService;
 import com.shivang.obd.authz.context.OrganizationContextHolder;
 import com.shivang.obd.contact.ContactGroupRepository;
 import com.shivang.obd.campaign.config.CampaignConfigInvalidException;
+import com.shivang.obd.campaign.config.CampaignIntegrationConfig;
 import com.shivang.obd.campaign.config.CampaignTypeConfig;
 import com.shivang.obd.campaign.config.ConnectByAgentCampaignConfig;
 import com.shivang.obd.campaign.dto.CampaignReadinessReason;
@@ -149,6 +150,10 @@ public class CampaignReadinessService {
         // 7b. VB-7A: CONNECT_BY_AGENT queue configuration. Only for that
         //      campaign type; every other type has nothing to check here.
         checkConnectByAgent(campaign, reasons);
+
+        // 7c. VB-7C.2: integration configuration readability. Configuration
+        //      correctness only - see the method for what is deliberately absent.
+        checkIntegrationConfig(campaign, reasons);
 
         boolean ready = reasons.isEmpty();
         return new CampaignReadinessResponse(campaign.getId(), ready, reasons);
@@ -314,6 +319,47 @@ public class CampaignReadinessService {
         }
     }
 
+    /**
+     * VB-7C.2: the campaign's stored integration configuration must be
+     * <em>readable</em>.
+     *
+     * <p><b>Why this is a readiness check at all</b>, given that
+     * {@code CampaignService} already validates the same configuration on write.
+     * The two answer different questions. Write-time asks "may this be stored?";
+     * readiness asks "can the platform still understand what is stored?". A row
+     * can become unreadable after the fact - written by an older or newer
+     * version of the platform, or edited directly in the database - and a
+     * campaign the platform cannot read its own configuration for is not
+     * runnable in any meaningful sense. That is the same write-time/readiness
+     * division this class already uses for DID, audio and TTS references, whose
+     * validity is likewise checked at both layers.
+     *
+     * <p><b>What this deliberately does not check.</b> Not whether the endpoint
+     * is reachable, not whether events will be delivered, not whether a webhook
+     * transport or signing service exists, and not whether a reporting
+     * subsystem is installed. VB-7C.2 implements none of those, so any such
+     * check could only ever be false; and a readiness rule that fails on an
+     * intentionally absent subsystem would leave every configured campaign
+     * permanently unready for a condition that is not a fault. A correctly
+     * configured webhook must therefore <em>not</em> block readiness, and
+     * {@code CampaignReadinessServiceTest} asserts exactly that.
+     *
+     * <p>Keyed on nothing type-related, so no campaign type can be exempted.
+     */
+    private void checkIntegrationConfig(
+            CampaignEntity campaign, List<CampaignReadinessReason> reasons) {
+        JsonNode stored = campaign.getIntegrationConfig();
+        if (stored == null || stored.isNull()) {
+            return; // no integrations configured - the overwhelmingly common case
+        }
+        try {
+            CampaignIntegrationConfig.fromJson(stored);
+        } catch (CampaignConfigInvalidException e) {
+            reasons.add(new CampaignReadinessReason(
+                    "INVALID_INTEGRATION_CONFIGURATION",
+                    "Integration configuration is not valid: " + e.getMessage()));
+        }
+    }
     /**
      * Validates content mode matches campaign type requirements.
      */

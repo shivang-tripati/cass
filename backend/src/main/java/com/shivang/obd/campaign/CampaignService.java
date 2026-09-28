@@ -127,6 +127,12 @@ public class CampaignService {
         // VB-7A: queue ownership + administrative lifecycle, the same canonical
         // rule as the DID and content references above.
         validateAgentQueueReference(request.campaignType(), request.typeConfig(), tenantId);
+        // VB-7C.2: typed integration configuration. Validated here, at write time,
+        // because a malformed endpoint or an unknown event can never become
+        // valid later - and because the value is only storable once it is known
+        // good. Type-independent: it applies to every campaign type equally, so
+        // there is no campaign-type list to fall out of date.
+        validateIntegrationConfig(request.integrationConfig());
         // VB-6C.2: canonical domain rule for the daily dial limit — guards
         // entities constructed outside REST (DTO validation covers that path;
         // the V48 DB CHECK is the last line of defense).
@@ -220,6 +226,8 @@ public class CampaignService {
         // VB-7A: same canonical rule on the update path.
         validateAgentQueueReference(
             entity.getCampaignType(), request.typeConfig(), entity.getTenantId());
+        // VB-7C.2: same canonical integration rule on the update path.
+        validateIntegrationConfig(request.integrationConfig());
         // VB-6C.2: same canonical domain rule on the update path.
         DailyDialLimitService.assertConfigurable(request.dailyDialLimit());
         // VB-6D.2: same canonical domain rule for retry policy.
@@ -476,6 +484,48 @@ public class CampaignService {
     private void validateTypeConfig(CampaignType type, JsonNode typeConfig) {
         try {
             com.shivang.obd.campaign.config.CampaignTypeConfig.fromTypeConfig(type, typeConfig);
+        } catch (com.shivang.obd.campaign.config.CampaignConfigInvalidException e) {
+            throw business(e.getMessage());
+        }
+    }
+
+    /**
+     * VB-7C.2: the campaign's typed integration configuration.
+     *
+     * <p>Validated at <b>write time</b> rather than only at readiness, because
+     * every rule here is a rule about whether the configuration can ever be
+     * valid: a malformed URL stays malformed, an unsupported event identifier is
+     * never going to be supported, and a duplicate is a client mistake. None of
+     * them can be repaired by waiting, so there is nothing for a readiness check
+     * to discover later that this does not already reject.
+     *
+     * <p>Applies to <b>every</b> campaign type equally and is keyed on nothing
+     * type-related, so it cannot become a Family-B membership list that a fifth
+     * campaign type silently escapes. That was the defect class VB-7C.1 removed.
+     *
+     * <p>Reports through the existing {@code business(...)} convention, so an
+     * invalid configuration is an ordinary validation 400 - never a 500, and
+     * never a new error envelope.
+     *
+     * <p>Note what this deliberately does <em>not</em> check: that the endpoint
+     * is reachable, that any webhook transport exists, or that a report
+     * subsystem is installed. VB-7C.2 implements no delivery and no reporting,
+     * so such checks could only ever be false, and gating readiness on an
+     * intentionally absent subsystem would make every configured campaign
+     * permanently unready.
+     */
+    private void validateIntegrationConfig(
+            com.shivang.obd.campaign.config.CampaignIntegrationConfig integrationConfig) {
+        if (integrationConfig == null) {
+            return;
+        }
+        try {
+            // Round-tripping through the canonical serialization is the
+            // strongest available check: it re-parses the normalized form, so a
+            // value that cannot survive serialization is rejected here rather
+            // than failing later on a read.
+            com.shivang.obd.campaign.config.CampaignIntegrationConfig
+                .fromJson(integrationConfig.toJson());
         } catch (com.shivang.obd.campaign.config.CampaignConfigInvalidException e) {
             throw business(e.getMessage());
         }

@@ -216,4 +216,132 @@ class CampaignApiSliceTest {
             verify(campaignService, never()).update(any(), any());
         }
     }
+
+    /**
+     * VB-7C.2: the HTTP surface of the typed integration configuration.
+     *
+     * <p>The load-bearing assertion here is the <b>status code</b>. A malformed
+     * integration payload is rejected by Jackson while it constructs the typed
+     * configuration, so it never reaches {@code CampaignService} at all. The
+     * question this answers is whether that refusal surfaces as an ordinary
+     * validation 400 through the existing error model, or as an unexpected 500.
+     * It must be 400: a client sending a bad webhook endpoint is making a
+     * mistake, not triggering a server fault.
+     */
+    @Nested
+    @DisplayName("VB-7C.2 integration configuration over HTTP")
+    class IntegrationConfigHttp {
+
+        private String body(String integrationJson) {
+            return "{\"name\":\"Voice blast\",\"campaignType\":\"PLAYFILE\""
+                    + (integrationJson.isEmpty() ? "" : ",\"integrationConfig\":" + integrationJson)
+                    + "}";
+        }
+
+        @Test
+        @DisplayName("API-C2.1: a well-formed webhook configuration is accepted (201)")
+        void validWebhookAccepted() throws Exception {
+            stubCreateEchoingRequestedLimit();
+
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"webhook\":{\"enabled\":true,"
+                            + "\"endpoint\":\"https://example.com/h\","
+                            + "\"events\":[\"campaign.attempt.completed\"]}}")))
+                    .andExpect(status().isCreated());
+        }
+
+        @Test
+        @DisplayName("API-C2.2: a disabled webhook with nothing configured is accepted (201)")
+        void disabledWebhookAccepted() throws Exception {
+            stubCreateEchoingRequestedLimit();
+
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"webhook\":{\"enabled\":false}}")))
+                    .andExpect(status().isCreated());
+        }
+
+        @Test
+        @DisplayName("API-C2.3: a non-web endpoint scheme is 400, not 500")
+        void nonWebSchemeIsBadRequest() throws Exception {
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"webhook\":{\"enabled\":true,"
+                            + "\"endpoint\":\"file:///etc/passwd\","
+                            + "\"events\":[\"campaign.attempt.completed\"]}}")))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("API-C2.4: an enabled webhook with no endpoint is 400")
+        void enabledWithoutEndpointIsBadRequest() throws Exception {
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"webhook\":{\"enabled\":true,"
+                            + "\"events\":[\"campaign.attempt.completed\"]}}")))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("API-C2.5: an unknown event identifier is 400, never silently accepted")
+        void unknownEventIsBadRequest() throws Exception {
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"webhook\":{\"enabled\":true,"
+                            + "\"endpoint\":\"https://example.com/h\","
+                            + "\"events\":[\"campaign.attempt.teleported\"]}}")))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("API-C2.6: a secret-like field is 400 - credentials cannot be stored")
+        void secretFieldIsBadRequest() throws Exception {
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"webhook\":{\"enabled\":false,"
+                            + "\"secret\":\"hunter2\"}}")))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("API-C2.7: an unknown integrationConfig field is 400, not ignored")
+        void unknownFieldIsBadRequest() throws Exception {
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"slack\":{\"url\":\"x\"}}")))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("API-C2.8: an unsupported report privacy policy is 400")
+        void badPrivacyIsBadRequest() throws Exception {
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"reportPrivacy\":{\"policy\":\"ANONYMISED\"}}")))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("API-C2.9: a valid MASKED privacy configuration is accepted (201)")
+        void maskedPrivacyAccepted() throws Exception {
+            stubCreateEchoingRequestedLimit();
+
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("{\"reportPrivacy\":{\"policy\":\"MASKED\"}}")))
+                    .andExpect(status().isCreated());
+        }
+
+        @Test
+        @DisplayName("API-C2.10: an omitted integrationConfig is still accepted (201)")
+        void omittedStillAccepted() throws Exception {
+            stubCreateEchoingRequestedLimit();
+
+            mockMvc.perform(post("/api/v1/campaigns")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(body("")))
+                    .andExpect(status().isCreated());
+        }
+    }
 }

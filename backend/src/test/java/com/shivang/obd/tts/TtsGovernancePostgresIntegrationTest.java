@@ -267,6 +267,15 @@ class TtsGovernancePostgresIntegrationTest {
             c.setContactGroupId(contactGroupId);
             c.setRetryPolicy(new com.shivang.obd.campaign.RetryPolicySpec(
                 0, null, com.shivang.obd.campaign.RetryStrategy.FIXED));
+            // VB-7C.1: a campaign with no execution timezone cannot be dialled at
+            // all - OutboundDialService hands the snapshot zone to
+            // DailyDialLimitService, which throws a PERMANENT
+            // EXECUTION_TIMEZONE_INVALID on a null or blank value, with no
+            // JVM/UTC fallback - so readiness requires one. A windowless
+            // schedule is the minimal shape that satisfies it without making
+            // these assertions depend on the day the suite runs.
+            c.setSchedule(new com.shivang.obd.campaign.ScheduleSpec(
+                null, null, null, null, "Asia/Kolkata", null, null));
             return campaignRepository.saveAndFlush(c).getId();
         });
     }
@@ -542,17 +551,29 @@ class TtsGovernancePostgresIntegrationTest {
         UUID templateId = seedTemplate("c1", TtsTemplateScope.TENANT, TtsTemplateStatus.APPROVED, tenantA);
         UUID campaignId = seedCampaign(tenantA, groupId, templateId, CampaignStatus.SCHEDULED);
 
-        assertThat(reasonCodes(campaignId)).isEmpty();
+        // The only remaining reason is the PLAYFILE+TTS content rejection, which
+        // VB-6E introduced deliberately: TTS has no playback runtime, so such a
+        // campaign can never run no matter how good the template is. The
+        // assertion is therefore that the TEMPLATE is not the blocker.
+        assertThat(reasonCodes(campaignId))
+                .containsExactly("INVALID_CONTENT_CONFIGURATION")
+                .doesNotContain("TTS_TEMPLATE_NOT_APPROVED", "TTS_TEMPLATE_NOT_AVAILABLE");
     }
 
     @Test
-    @DisplayName("PG-C2: campaign on APPROVED GLOBAL template is ready")
+    @DisplayName("PG-C2: campaign on APPROVED GLOBAL template has no template reason")
     void campaignReadyGlobalTemplate() {
         UUID groupId = seedContactGroup(tenantA);
         UUID templateId = seedTemplate("c2", TtsTemplateScope.GLOBAL, TtsTemplateStatus.APPROVED, null);
         UUID campaignId = seedCampaign(tenantA, groupId, templateId, CampaignStatus.SCHEDULED);
 
-        assertThat(reasonCodes(campaignId)).isEmpty();
+        // The only remaining reason is the PLAYFILE+TTS content rejection, which
+        // VB-6E introduced deliberately: TTS has no playback runtime, so such a
+        // campaign can never run no matter how good the template is. The
+        // assertion is therefore that the TEMPLATE is not the blocker.
+        assertThat(reasonCodes(campaignId))
+                .containsExactly("INVALID_CONTENT_CONFIGURATION")
+                .doesNotContain("TTS_TEMPLATE_NOT_APPROVED", "TTS_TEMPLATE_NOT_AVAILABLE");
     }
 
     @Test
@@ -562,7 +583,13 @@ class TtsGovernancePostgresIntegrationTest {
         UUID templateId = seedTemplate("c3", TtsTemplateScope.TENANT, TtsTemplateStatus.PENDING_APPROVAL, tenantA);
         UUID campaignId = seedCampaign(tenantA, groupId, templateId, CampaignStatus.SCHEDULED);
 
-        assertThat(reasonCodes(campaignId)).containsExactly("TTS_TEMPLATE_NOT_APPROVED");
+        // INVALID_CONTENT_CONFIGURATION is expected and unrelated to template
+        // governance: it records the VB-6E rule that TTS cannot be played. The
+        // template reason is asserted exactly, so a regression in template
+        // resolution would still fail this test.
+        assertThat(reasonCodes(campaignId))
+                .containsExactlyInAnyOrder(
+                        "INVALID_CONTENT_CONFIGURATION", "TTS_TEMPLATE_NOT_APPROVED");
     }
 
     @Test
@@ -572,7 +599,13 @@ class TtsGovernancePostgresIntegrationTest {
         UUID templateId = seedTemplate("c4", TtsTemplateScope.TENANT, TtsTemplateStatus.APPROVED, tenantB);
         UUID campaignId = seedCampaign(tenantA, groupId, templateId, CampaignStatus.SCHEDULED);
 
-        assertThat(reasonCodes(campaignId)).containsExactly("TTS_TEMPLATE_NOT_AVAILABLE");
+        // INVALID_CONTENT_CONFIGURATION is expected and unrelated to template
+        // governance: it records the VB-6E rule that TTS cannot be played. The
+        // template reason is asserted exactly, so a regression in template
+        // resolution would still fail this test.
+        assertThat(reasonCodes(campaignId))
+                .containsExactlyInAnyOrder(
+                        "INVALID_CONTENT_CONFIGURATION", "TTS_TEMPLATE_NOT_AVAILABLE");
     }
 
     @Test
@@ -581,14 +614,26 @@ class TtsGovernancePostgresIntegrationTest {
         UUID groupId = seedContactGroup(tenantA);
         UUID globalId = seedTemplate("c5", TtsTemplateScope.GLOBAL, TtsTemplateStatus.PENDING_APPROVAL, null);
         UUID campaignId = seedCampaign(tenantA, groupId, globalId, CampaignStatus.SCHEDULED);
-        assertThat(reasonCodes(campaignId)).containsExactly("TTS_TEMPLATE_NOT_APPROVED");
+        // INVALID_CONTENT_CONFIGURATION is expected and unrelated to template
+        // governance: it records the VB-6E rule that TTS cannot be played. The
+        // template reason is asserted exactly, so a regression in template
+        // resolution would still fail this test.
+        assertThat(reasonCodes(campaignId))
+                .containsExactlyInAnyOrder(
+                        "INVALID_CONTENT_CONFIGURATION", "TTS_TEMPLATE_NOT_APPROVED");
 
         transactionTemplate.executeWithoutResult(tx ->
             entityManager.createNativeQuery(
                 "UPDATE tts_templates SET deleted_at = now() WHERE id = :id")
                 .setParameter("id", globalId)
                 .executeUpdate());
-        assertThat(reasonCodes(campaignId)).containsExactly("TTS_TEMPLATE_NOT_AVAILABLE");
+        // INVALID_CONTENT_CONFIGURATION is expected and unrelated to template
+        // governance: it records the VB-6E rule that TTS cannot be played. The
+        // template reason is asserted exactly, so a regression in template
+        // resolution would still fail this test.
+        assertThat(reasonCodes(campaignId))
+                .containsExactlyInAnyOrder(
+                        "INVALID_CONTENT_CONFIGURATION", "TTS_TEMPLATE_NOT_AVAILABLE");
     }
 
     @Test
@@ -597,7 +642,13 @@ class TtsGovernancePostgresIntegrationTest {
         UUID groupId = seedContactGroup(tenantA);
         UUID campaignId = seedCampaign(tenantA, groupId, UUID.randomUUID(), CampaignStatus.SCHEDULED);
 
-        assertThat(reasonCodes(campaignId)).containsExactly("TTS_TEMPLATE_NOT_AVAILABLE");
+        // INVALID_CONTENT_CONFIGURATION is expected and unrelated to template
+        // governance: it records the VB-6E rule that TTS cannot be played. The
+        // template reason is asserted exactly, so a regression in template
+        // resolution would still fail this test.
+        assertThat(reasonCodes(campaignId))
+                .containsExactlyInAnyOrder(
+                        "INVALID_CONTENT_CONFIGURATION", "TTS_TEMPLATE_NOT_AVAILABLE");
     }
 
     @Test
@@ -607,7 +658,13 @@ class TtsGovernancePostgresIntegrationTest {
         UUID globalId = seedTemplate("c7", TtsTemplateScope.GLOBAL, TtsTemplateStatus.REJECTED, null);
         UUID campaignId = seedCampaign(tenantA, groupId, globalId, CampaignStatus.SCHEDULED);
 
-        assertThat(reasonCodes(campaignId)).containsExactly("TTS_TEMPLATE_NOT_APPROVED");
+        // INVALID_CONTENT_CONFIGURATION is expected and unrelated to template
+        // governance: it records the VB-6E rule that TTS cannot be played. The
+        // template reason is asserted exactly, so a regression in template
+        // resolution would still fail this test.
+        assertThat(reasonCodes(campaignId))
+                .containsExactlyInAnyOrder(
+                        "INVALID_CONTENT_CONFIGURATION", "TTS_TEMPLATE_NOT_APPROVED");
     }
 
     @Test

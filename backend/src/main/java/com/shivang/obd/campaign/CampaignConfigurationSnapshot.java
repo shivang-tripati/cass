@@ -32,7 +32,20 @@ import tools.jackson.databind.JsonNode;
  *   <li>SNAPSHOT_REQUIRED: type, audience/group reference, DID reference,
  *       content mode and asset/template references, schedule window, retry
  *       policy, typeConfig, whitelist enforcement flag</li>
- *   <li>Excluded: {@code integrationConfig} — no code reads it today;
+ *   <li>Excluded: {@code integrationConfig} - <b>still excluded in VB-7C.2,</b> and
+ *       the exclusion is deliberate but time-limited. Nothing consumes it: the typed
+ *       {@code CampaignIntegrationConfig} has no runtime reader, because webhook
+ *       delivery, signing and reporting are all unimplemented. Freezing it would
+ *       record an execution's intent to deliver web-hooks - semantics no execution
+ *       currently has.
+ *       <p><b>The rule for the future:</b> the moment the first consumer of this
+ *       configuration appears, it MUST be added here <em>in the same phase</em>.
+ *       Shipping a consumer while leaving it excluded would let an operator edit a
+ *       campaign's endpoint and silently change the behaviour of an already-running
+ *       execution - precisely the failure the immutable snapshot exists to prevent.
+ *       Adding it needs only an additive column on this embeddable and the matching
+ *       column in {@code campaign_execution_configurations}, following the V49/V52
+ *       precedent; no versioning, history table or compatibility shim.</li>
  *       snapshotting it would invent execution semantics it does not have</li>
  * </ul>
  * Resource <em>validity</em> of the referenced DID/audio/TTS is never frozen:

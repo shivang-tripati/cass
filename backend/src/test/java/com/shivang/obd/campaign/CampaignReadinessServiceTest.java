@@ -684,4 +684,143 @@ class CampaignReadinessServiceTest {
                 .thenReturn(false);
         return repo;
     }
+
+    /**
+     * VB-7C.2: integration configuration readiness.
+     *
+     * <p>The point of this group is what readiness does <em>not</em> do. VB-7C.2
+     * implements no webhook delivery, no signing and no reporting, so any
+     * readiness rule referencing those subsystems could only ever be false.
+     * Gating readiness on an intentionally absent subsystem would leave every
+     * configured campaign permanently unready for a condition that is not a
+     * fault - the same mistake VB-7A fixed for live agent availability.
+     */
+    @Nested
+    @DisplayName("F. integration configuration (VB-7C.2)")
+    class IntegrationConfiguration {
+
+        private CampaignEntity withIntegration(CampaignType type, String rawJson) {
+            var c = ready(type);
+            if (rawJson != null) {
+                c.setIntegrationConfig(json(rawJson));
+            }
+            return c;
+        }
+
+        @Test
+        @DisplayName("F1. a valid ENABLED webhook does NOT block readiness - delivery is "
+                + "unimplemented, and that is not a fault")
+        void validWebhookDoesNotBlockReadiness() {
+            var response = evaluate(withIntegration(CampaignType.MISSED_CALL,
+                    "{\"webhook\":{\"enabled\":true,"
+                        + "\"endpoint\":\"https://example.com/hooks/campaign\","
+                        + "\"events\":[\"campaign.attempt.completed\","
+                        + "\"campaign.attempt.failed\"]},"
+                        + "\"reportPrivacy\":{\"policy\":\"MASKED\"}}"));
+
+            assertThat(response.reasons())
+                    .as("a correctly configured webhook must leave the campaign ready")
+                    .isEmpty();
+            assertThat(response.ready()).isTrue();
+        }
+
+        @Test
+        @DisplayName("F2. a valid webhook does not block readiness for ANY campaign type")
+        void validWebhookDoesNotBlockAnyType() {
+            for (CampaignType type : CampaignType.values()) {
+                var response = evaluate(withIntegration(type,
+                        "{\"webhook\":{\"enabled\":true,"
+                            + "\"endpoint\":\"https://example.com/h\","
+                            + "\"events\":[\"campaign.attempt.completed\"]}}"));
+                assertThat(response.reasons())
+                        .as("%s with a valid webhook must be ready", type)
+                        .isEmpty();
+            }
+        }
+
+        @Test
+        @DisplayName("F3. a DISABLED webhook with nothing configured does not block readiness")
+        void disabledWebhookDoesNotBlockReadiness() {
+            assertThat(evaluate(withIntegration(
+                    CampaignType.PLAYFILE, "{\"webhook\":{\"enabled\":false}}")).ready())
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("F4. no integration configuration at all does not block readiness")
+        void absentIntegrationDoesNotBlockReadiness() {
+            assertThat(evaluate(ready(CampaignType.MISSED_CALL)).ready()).isTrue();
+        }
+
+        @Test
+        @DisplayName("F5. an UNREADABLE stored configuration is reported, so a row the "
+                + "platform cannot parse never presents as runnable")
+        void unreadableStoredConfigurationIsReported() {
+            // Write-time validation means the API cannot produce this. It can
+            // still arise from a row written by another version of the platform or
+            // edited directly in the database - which is exactly the case
+            // readiness exists to catch and write-time validation cannot.
+            var response = evaluate(withIntegration(
+                    CampaignType.MISSED_CALL, "{\"webhook\":{\"endpoint\":\"nonsense\"}}"));
+
+            assertThat(response.ready()).isFalse();
+            assertThat(response.reasons())
+                    .anyMatch(r -> r.code().equals("INVALID_INTEGRATION_CONFIGURATION"));
+        }
+
+        @Test
+        @DisplayName("F6. readiness does not require webhook DELIVERY infrastructure, and "
+                + "does not report a delivery-unavailable reason")
+        void readinessNeverRequiresDeliveryInfrastructure() {
+            var response = evaluate(withIntegration(CampaignType.MISSED_CALL,
+                    "{\"webhook\":{\"enabled\":true,"
+                        + "\"endpoint\":\"https://example.com/h\","
+                        + "\"events\":[\"campaign.attempt.completed\"]}}"));
+
+            String text = response.reasons().toString().toUpperCase(java.util.Locale.ROOT);
+            assertThat(text)
+                    .doesNotContain("DELIVERY")
+                    .doesNotContain("WEBHOOK_TRANSPORT")
+                    .doesNotContain("SIGNING")
+                    .doesNotContain("UNREACHABLE")
+                    .doesNotContain("PROVIDER");
+        }
+
+        @Test
+        @DisplayName("F7. readiness does not require REPORT infrastructure, and does not "
+                + "report a report-subsystem reason")
+        void readinessNeverRequiresReportInfrastructure() {
+            var response = evaluate(withIntegration(
+                    CampaignType.MISSED_CALL, "{\"reportPrivacy\":{\"policy\":\"MASKED\"}}"));
+
+            assertThat(response.reasons()).isEmpty();
+            String text = response.reasons().toString().toUpperCase(java.util.Locale.ROOT);
+            assertThat(text).doesNotContain("REPORT");
+        }
+
+        @Test
+        @DisplayName("F8. an enabled webhook with no events does not pass readiness, even "
+                + "though it cannot be stored through the API")
+        void enabledWithoutEventsIsNotReady() {
+            var response = evaluate(withIntegration(
+                    CampaignType.MISSED_CALL, "{\"webhook\":{\"enabled\":true}}"));
+
+            assertThat(response.ready()).isFalse();
+            assertThat(response.reasons())
+                    .anyMatch(r -> r.code().equals("INVALID_INTEGRATION_CONFIGURATION"));
+        }
+
+        @Test
+        @DisplayName("F9. a stored endpoint with a non-web scheme is reported")
+        void badStoredSchemeIsReported() {
+            var response = evaluate(withIntegration(
+                    CampaignType.MISSED_CALL,
+                    "{\"webhook\":{\"enabled\":true,\"endpoint\":\"file:///etc/passwd\","
+                        + "\"events\":[\"campaign.attempt.completed\"]}}"));
+
+            assertThat(response.ready()).isFalse();
+            assertThat(response.reasons())
+                    .anyMatch(r -> r.code().equals("INVALID_INTEGRATION_CONFIGURATION"));
+        }
+    }
 }

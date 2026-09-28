@@ -4,6 +4,7 @@ import tools.jackson.databind.JsonNode;
 import com.shivang.obd.campaign.CampaignRunMode;
 import com.shivang.obd.campaign.CampaignStatus;
 import com.shivang.obd.campaign.CampaignType;
+import com.shivang.obd.campaign.config.CampaignIntegrationConfig;
 import com.shivang.obd.campaign.ContentMode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
@@ -46,7 +47,20 @@ public record CampaignResponse(
             + "\"selectionStrategy\": \"LEAST_ACTIVE_RESERVATIONS\", "
             + "\"ringDurationSeconds\": 60}}")
     JsonNode typeConfig,
-    JsonNode integrationConfig,
+    /**
+     * The campaign's typed integration configuration, or {@code null} when it
+     * has none. Configuration only: a present {@code webhook} records configured
+     * intent and does NOT mean anything was delivered - this platform implements
+     * no webhook transport, signing, retry or delivery record.
+     */
+    @Schema(description = "Typed integration configuration, or null when the campaign has "
+        + "none. Configuration only: a present `webhook` records configured intent and does "
+        + "NOT mean anything was delivered. `webhook.events` holds identifiers from the "
+        + "public vocabulary (`campaign.attempt.completed`, `campaign.attempt.failed`, "
+        + "`campaign.attempt.cancelled`). `reportPrivacy.policy` describes what a future "
+        + "reporting subsystem should show; it does not change the existing attempt-listing "
+        + "APIs, which continue to return contact data unchanged.")
+    CampaignIntegrationConfig integrationConfig,
     Instant createdAt,
     Instant updatedAt,
     Boolean callOnWhitelistNumbers,
@@ -111,7 +125,7 @@ public record CampaignResponse(
             ScheduleConfig schedule,
             RetryPolicyConfig retryPolicy,
             JsonNode typeConfig,
-            JsonNode integrationConfig,
+            CampaignIntegrationConfig integrationConfig,
             Instant createdAt,
             Instant updatedAt,
             Boolean callOnWhitelistNumbers,
@@ -146,7 +160,7 @@ public record CampaignResponse(
             ScheduleConfig schedule,
             RetryPolicyConfig retryPolicy,
             JsonNode typeConfig,
-            JsonNode integrationConfig,
+            CampaignIntegrationConfig integrationConfig,
             Instant createdAt,
             Instant updatedAt,
             Boolean callOnWhitelistNumbers,

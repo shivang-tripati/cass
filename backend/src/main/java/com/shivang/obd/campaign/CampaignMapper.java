@@ -103,7 +103,7 @@ public class CampaignMapper {
             toScheduleView(entity.getSchedule()),
             toRetryView(entity.getRetryPolicy()),
             entity.getTypeConfig(),
-            entity.getIntegrationConfig(),
+            toIntegrationView(entity.getIntegrationConfig()),
             entity.getCreatedAt(),
             entity.getUpdatedAt(),
             entity.getCallOnWhitelistNumbers(),
@@ -114,6 +114,44 @@ public class CampaignMapper {
     }
 
     // === internal ===
+
+    /**
+     * VB-7C.2: the entity's JSONB becomes the typed public configuration.
+     *
+     * <p>A stored payload that no longer parses is a data-integrity problem, not
+     * something to paper over: it is reported, because silently returning null
+     * would tell an operator their webhook is unconfigured when the truth is
+     * that the platform cannot read what it stored.
+     */
+    private com.shivang.obd.campaign.config.CampaignIntegrationConfig toIntegrationView(
+            JsonNode stored) {
+        if (stored == null || stored.isNull()) {
+            return null;
+        }
+        try {
+            return com.shivang.obd.campaign.config.CampaignIntegrationConfig.fromJson(stored);
+        } catch (com.shivang.obd.campaign.config.CampaignConfigInvalidException e) {
+            throw new IllegalStateException(
+                    "Stored campaign integration configuration is not readable: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * VB-7C.2: the typed public configuration becomes the canonical JSONB.
+     *
+     * <p>Always writes the <em>canonical</em> serialization, so what is persisted
+     * is normalised rather than whatever shape the client sent. A null stays
+     * null: writing an explicit default object into every campaign would be a
+     * silent change to every existing row and would make "configured"
+     * indistinguishable from "defaulted".
+     */
+    private JsonNode toIntegrationStorage(
+            com.shivang.obd.campaign.config.CampaignIntegrationConfig config) {
+        if (config == null) {
+            return null;
+        }
+        return config.toJson();
+    }
 
     private void applyCommon(
         CampaignEntity entity,
@@ -128,7 +166,7 @@ public class CampaignMapper {
         ScheduleConfig schedule,
         RetryPolicyConfig retryPolicy,
         JsonNode typeConfig,
-        JsonNode integrationConfig,
+        com.shivang.obd.campaign.config.CampaignIntegrationConfig integrationConfig,
         Integer dailyDialLimit
     ) {        entity.setName(name);
         entity.setDescription(description);
@@ -141,7 +179,7 @@ public class CampaignMapper {
         entity.setSchedule(toScheduleSpec(schedule));
         entity.setRetryPolicy(normalizeRetry(retryPolicy));
         entity.setTypeConfig(typeConfig);
-        entity.setIntegrationConfig(integrationConfig);
+        entity.setIntegrationConfig(toIntegrationStorage(integrationConfig));
         entity.setDailyDialLimit(dailyDialLimit);
     }
 
