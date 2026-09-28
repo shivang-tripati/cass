@@ -65,7 +65,10 @@ public class PlayfileExecutionService implements PlaybackTrigger {
     /** Logical storage reference to FreeSWITCH-readable media path (VB-6E). */
     private final MediaUriResolver mediaUriResolver;
     private final VoiceMediaController mediaController;
+    /** VB-7B: the one shared deadline_at authority (see CallSessionDeadlineAuthority). */
+    private final CallSessionDeadlineAuthority deadlineAuthority;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public PlayfileExecutionService(
             CallSessionRepository callSessionRepository,
             CallLegRepository callLegRepository,
@@ -76,7 +79,8 @@ public class PlayfileExecutionService implements PlaybackTrigger {
             CampaignResourceValidationService resourceValidator,
             CampaignRuntimeConfigResolver runtimeConfigResolver,
             MediaUriResolver mediaUriResolver,
-            @Lazy VoiceMediaController mediaController) {
+            @Lazy VoiceMediaController mediaController,
+            CallSessionDeadlineAuthority deadlineAuthority) {
         this.callSessionRepository = callSessionRepository;
         this.callLegRepository = callLegRepository;
         this.callAttemptRepository = callAttemptRepository;
@@ -87,6 +91,29 @@ public class PlayfileExecutionService implements PlaybackTrigger {
         this.runtimeConfigResolver = runtimeConfigResolver;
         this.mediaUriResolver = mediaUriResolver;
         this.mediaController = mediaController;
+    this.deadlineAuthority = deadlineAuthority;
+    }
+
+    /**
+     * The pre-VB-7B constructor, retained so every existing construction site is
+     * unchanged. When no shared authority is supplied this service builds one
+     * from the session repository it already holds, so behaviour is identical.
+     */
+    public PlayfileExecutionService(
+        CallSessionRepository callSessionRepository,
+        CallLegRepository callLegRepository,
+        CallAttemptRepository callAttemptRepository,
+        CampaignRepository campaignRepository,
+        CampaignExecutionRepository executionRepository,
+        AudioAssetRepository audioAssetRepository,
+        CampaignResourceValidationService resourceValidator,
+        CampaignRuntimeConfigResolver runtimeConfigResolver,
+        MediaUriResolver mediaUriResolver,
+        @Lazy VoiceMediaController mediaController) {
+    this(callSessionRepository, callLegRepository, callAttemptRepository, campaignRepository,
+        executionRepository, audioAssetRepository, resourceValidator, runtimeConfigResolver,
+        mediaUriResolver, mediaController,
+        new CallSessionDeadlineAuthority(callSessionRepository));
     }
 
     /**
@@ -329,7 +356,7 @@ public class PlayfileExecutionService implements PlaybackTrigger {
      * @return true when a deadline was recorded by this call
      */
     private boolean applyMaxCallDuration(UUID callAttemptId, CallSession session) {
-        if (session.getDeadlineAt() != null) {
+        if (deadlineAuthority.hasDeadline(session)) {
             return false;
         }
         var attemptOpt = callAttemptRepository.findById(callAttemptId);
@@ -342,12 +369,19 @@ public class PlayfileExecutionService implements PlaybackTrigger {
             return false;
         }
         int seconds = MaxCallDurationPolicy.effectiveSeconds(config.maxCallDurationSeconds());
-        Instant answeredAt = session.getAnsweredAt() != null
-                ? session.getAnsweredAt()
-                : Instant.now();
-        session.setAnsweredAt(answeredAt);
-        session.setDeadlineAt(answeredAt.plusSeconds(seconds));
-        callSessionRepository.save(session);
+        // VB-7B: the calculation and the persistence now live in the one shared
+        // authority (CallSessionDeadlineAuthority), so MISSED_CALL's ring budget
+        // and this cap cannot drift apart. The anchor and the idempotency rule
+        // are unchanged: measured from the answer instant, and a session that
+        // already carries a deadline is never re-stamped, so a duplicate answer
+        // event cannot move it.
+        boolean stamped = deadlineAuthority.applyDeadline(
+                session, CallSessionDeadlineAuthority.Anchor.ANSWERED, seconds, false);
+        if (!stamped) {
+            return false;
+        }
+        session.setAnsweredAt(
+                session.getAnsweredAt() != null ? session.getAnsweredAt() : java.time.Instant.now());
 
         log.info("Call session {} answered - maximum call duration {}s (deadline {})",
                 session.getId(), seconds, session.getDeadlineAt());

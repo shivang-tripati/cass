@@ -182,6 +182,17 @@ public class CampaignRuntimeConfigResolver {
         }
 
         /**
+         * VB-7B: the MISSED_CALL configuration this execution is running, read
+         * from the FROZEN snapshot only.
+         */
+        public Optional<com.shivang.obd.campaign.config.MissedCallCampaignConfig> asMissedCall() {
+            return typeConfig
+                    instanceof com.shivang.obd.campaign.config.MissedCallCampaignConfig mc
+                    ? Optional.of(mc)
+                    : Optional.empty();
+        }
+
+        /**
          * VB-7A: the frozen CONNECT_BY_AGENT parameters for this execution, as
          * the connect boundary consumes them. {@link
          * com.shivang.obd.voice.agent.AgentConnectRequest#unscoped()} whenever this

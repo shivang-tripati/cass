@@ -432,18 +432,40 @@ public class CampaignService {
             }
         }
 
-        if (type != CampaignType.CONNECT_BY_AGENT && mode == null) {
+        // VB-7B: the content requirement is stated as an INCLUSIVE list on
+        // purpose. The previous form, `type != CONNECT_BY_AGENT`, was correct
+        // only while the enum had exactly three values: adding MISSED_CALL
+        // would have demanded audio/TTS content from a campaign type that plays
+        // no media at all. An inclusive list is safe by construction — a future
+        // fifth type is excluded until someone deliberately adds it.
+        if ((type == CampaignType.PLAYFILE || type == CampaignType.DTMF) && mode == null) {
             throw business(type + " campaigns require content (audio or TTS).");
         }
     }
 
+    /**
+     * VB-7B: every campaign type's {@code typeConfig} is now validated through
+     * {@link CampaignTypeConfig#fromTypeConfig}.
+     *
+     * <p>The previous form enumerated the types that require a payload
+     * ({@code DTMF || CONNECT_BY_AGENT}) and returned early for anything else.
+     * That is a fail-open list: adding a type to the enum without adding it here
+     * would have let an unparseable, legacy or hostile payload through write-time
+     * validation, activation and readiness, and the campaign would only fail much
+     * later at call time. Delegating instead means the sealed hierarchy is the
+     * single authority, and the exhaustive {@code switch} it uses is
+     * compiler-enforced — a new campaign type cannot be added without its parse
+     * arm.
+     *
+     * <p>This is strictly stronger than the previous behaviour for the two types
+     * that were already listed, and identical for PLAYFILE (whose valid
+     * configuration is the empty object).
+     */
     private void validateTypeConfig(CampaignType type, JsonNode typeConfig) {
-        boolean required = type == CampaignType.DTMF || type == CampaignType.CONNECT_BY_AGENT;
-        if (!required) {
-            return;
-        }
-        if (typeConfig == null || typeConfig.isNull() || !typeConfig.isObject() || typeConfig.isEmpty()) {
-            throw business(type + " campaigns require type-specific configuration.");
+        try {
+            com.shivang.obd.campaign.config.CampaignTypeConfig.fromTypeConfig(type, typeConfig);
+        } catch (com.shivang.obd.campaign.config.CampaignConfigInvalidException e) {
+            throw business(e.getMessage());
         }
     }
 

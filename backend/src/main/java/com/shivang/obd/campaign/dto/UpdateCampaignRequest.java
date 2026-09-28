@@ -50,10 +50,13 @@ public record UpdateCampaignRequest(
         + "  `LEAST_ACTIVE_RESERVATIONS` is supported.\n"
         + "- `connectByAgent.ringDurationSeconds` (integer, required, 10-240).\n\n"
         + "Changing any of these does not alter an execution that already exists: each\n"
-        + "execution owns an immutable configuration snapshot.",
-        example = "{\"connectByAgent\": {\"queueId\": \"3f2504e0-4f89-11d3-9a0c-0305e82c3301\", "
-            + "\"selectionStrategy\": \"LEAST_ACTIVE_RESERVATIONS\", "
-            + "\"ringDurationSeconds\": 90}}")
+        + "execution owns an immutable configuration snapshot.\n\n"
+        + "**MISSED_CALL** requires exactly `missedCall.ringDurationSeconds` (integer,\n"
+        + "required, 10-60) — the whole ring/connected time budget. The campaign plays no\n"
+        + "media, collects no input and involves no agent or queue; DID, audience, retry,\n"
+        + "schedule and safety are the campaign's own fields. Changing the budget affects\n"
+        + "only executions created afterwards.",
+        example = "{\"missedCall\": {\"ringDurationSeconds\": 30}}")
     JsonNode typeConfig,
 
     /** Optional API/webhook integration configuration; no secrets. */

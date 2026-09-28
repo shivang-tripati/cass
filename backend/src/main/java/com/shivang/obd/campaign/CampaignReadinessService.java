@@ -295,24 +295,44 @@ public class CampaignReadinessService {
             ));
         }
 
-        // PLAYFILE and DTMF require content; CONNECT_BY_AGENT does not
-        if (type != CampaignType.CONNECT_BY_AGENT && mode == null) {
+        // VB-7B: stated as an INCLUSIVE list, matching the write-time rule in
+        // CampaignService.validateContent. The previous `type != CONNECT_BY_AGENT`
+        // form was correct only while the enum had three values; MISSED_CALL
+        // plays no media and must not be told it requires content.
+        if ((type == CampaignType.PLAYFILE || type == CampaignType.DTMF) && mode == null) {
             reasons.add(new CampaignReadinessReason(
                 "MISSING_REQUIRED_REFERENCE",
                 type + " campaigns require content (audio or TTS)."
             ));
         }
 
-        // DTMF and CONNECT_BY_AGENT require type-specific configuration
-        if (type == CampaignType.DTMF || type == CampaignType.CONNECT_BY_AGENT) {
-            JsonNode typeConfig = campaign.getTypeConfig();
-            if (typeConfig == null || typeConfig.isNull() || !typeConfig.isObject() || typeConfig.isEmpty()) {
-                reasons.add(new CampaignReadinessReason(
-                    "MISSING_REQUIRED_REFERENCE",
-                    type + " campaigns require type-specific configuration."
-                ));
-            }
+        // VB-7B: every type's typeConfig is validated through the sealed
+        // hierarchy, replacing the previous fail-open list
+        // (`DTMF || CONNECT_BY_AGENT`) which would have skipped MISSED_CALL
+        // entirely. Delegating to the exhaustive dispatch means a future type
+        // cannot silently bypass readiness validation. An unparseable payload is
+        // reported with a type-appropriate reason by the per-type checks below.
+        try {
+            CampaignTypeConfig.fromTypeConfig(type, campaign.getTypeConfig());
+        } catch (CampaignConfigInvalidException e) {
+            reasons.add(new CampaignReadinessReason(
+                    invalidTypeConfigReasonCode(type),
+                    type + " configuration is invalid: " + e.getMessage()));
         }
+    }
+
+    /**
+     * VB-7B: the readiness reason code for a type configuration that does not
+     * parse. Kept in one place so the write-time and readiness surfaces cannot
+     * drift, and so a MISSED_CALL campaign is reported as a MISSED_CALL problem
+     * rather than being lumped in with an agent or content fault.
+     */
+    private static String invalidTypeConfigReasonCode(CampaignType type) {
+        return switch (type) {
+            case MISSED_CALL -> "INVALID_MISSED_CALL_CONFIGURATION";
+            case CONNECT_BY_AGENT -> "INVALID_AGENT_CONFIGURATION";
+            default -> "INVALID_CONTENT_CONFIGURATION";
+        };
     }
 
     /**
@@ -350,15 +370,12 @@ public class CampaignReadinessService {
             config = (ConnectByAgentCampaignConfig) CampaignTypeConfig.fromTypeConfig(
                     CampaignType.CONNECT_BY_AGENT, campaign.getTypeConfig());
         } catch (CampaignConfigInvalidException e) {
-            reasons.add(new CampaignReadinessReason(
-                    "INVALID_AGENT_CONFIGURATION",
-                    "CONNECT_BY_AGENT configuration is invalid: " + e.getMessage()));
+            // VB-7B: already reported by checkContentConfiguration, which now
+            // validates every type's payload through the sealed hierarchy.
+            // Re-reporting here would duplicate the reason in the response.
             return;
         }
         if (config == null) {
-            reasons.add(new CampaignReadinessReason(
-                    "INVALID_AGENT_CONFIGURATION",
-                    "CONNECT_BY_AGENT campaigns require a valid agent configuration."));
             return;
         }
 

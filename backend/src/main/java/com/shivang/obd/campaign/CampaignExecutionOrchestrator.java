@@ -80,6 +80,24 @@ public class CampaignExecutionOrchestrator {
      */
     private final StaleCallReconciler staleCallReconciler;
 
+    /**
+     * VB-7B: the MISSED_CALL ring-budget sweep, invoked from the existing tick.
+     *
+     * <p>Injected as an optional setter dependency rather than a constructor
+     * argument on purpose: the sweep is a pure addition to the tick, and keeping
+     * it off the constructor means no existing construction site — including the
+     * two test harnesses that build this orchestrator by hand — changes.
+     */
+    private org.springframework.beans.factory.ObjectProvider<MissedCallExecutionService>
+            missedCallExecution;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setMissedCallExecution(
+            org.springframework.beans.factory.ObjectProvider<MissedCallExecutionService>
+                    missedCallExecution) {
+        this.missedCallExecution = missedCallExecution;
+    }
+
     // Terminal attempt statuses
     private static final Set<CallAttemptStatus> TERMINAL_ATTEMPT_STATUSES = Set.of(
         CallAttemptStatus.COMPLETED,
@@ -493,10 +511,22 @@ public class CampaignExecutionOrchestrator {
             }
         });
 
-        // VB-6E: stale-attempt/stale-session reconciliation runs on the SAME
+        // VB-7E: stale-attempt/stale-session reconciliation runs on the SAME
         // tick, after the other steps, so it never competes with dispatch for
         // the rows it inspects. Not a new scheduler.
         runStep("reconcile-stale-calls", staleCallReconciler::reconcile);
+
+        // VB-7B: MISSED_CALL ring budgets are enforced on the SAME tick, in their
+        // own failure boundary. This is deliberately NOT a new @Scheduled
+        // component: a MISSED_CALL timeout must not add a scheduler, and running
+        // here means it can neither delay nor be delayed by any other step. The
+        // optional provider keeps an agent-less / campaign-less deployment (and
+        // every existing test harness) constructing exactly as before.
+        var missedCall = missedCallExecution != null
+                ? missedCallExecution.getIfAvailable() : null;
+        if (missedCall != null) {
+            runStep("terminate-missed-call-budgets", missedCall::terminateExpired);
+        }
     }
 
     /**

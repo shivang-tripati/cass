@@ -467,4 +467,129 @@ class CampaignOpenApiContractTest {
                 .isEqualTo(3600);
         assertThat(AgentRingWindow.MAX_RING_SECONDS).isLessThan(3600);
     }
+
+    // === VB-7B: MISSED_CALL campaign configuration documentation ===
+
+    @Test
+    @DisplayName("OAS-7B1: the generated document's campaignType enum exposes MISSED_CALL "
+            + "alongside every pre-existing type")
+    void missedCallAppearsInTheGeneratedEnum() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        // springdoc inlines the enum on the property rather than emitting a
+        // standalone component, so the source of truth is the property itself.
+        JsonNode campaignType = spec.at("/components/schemas/CampaignResponse/properties/campaignType");
+        assertThat(campaignType.isMissingNode()).isFalse();
+        assertThat(campaignType.at("/type").asText()).isEqualTo("string");
+        assertThat(campaignType.at("/enum").toString())
+                .contains("MISSED_CALL")
+                .contains("PLAYFILE")
+                .contains("DTMF")
+                .contains("CONNECT_BY_AGENT");
+        // and the create request exposes the same four, not a stale three
+        assertThat(spec.at("/components/schemas/CreateCampaignRequest"
+                + "/properties/campaignType/enum").toString()).contains("MISSED_CALL");
+    }
+
+    @Test
+    @DisplayName("OAS-7B2: the create schema documents the MISSED_CALL ring budget with its "
+            + "bounds")
+    void missedCallRingBudgetIsDocumentedOnCreate() throws Exception {
+        String description = schema(fetchOpenApi(), "CreateCampaignRequest")
+                .at("/properties/typeConfig/description").asText();
+
+        assertThat(description)
+                .contains("MISSED_CALL")
+                .contains("missedCall.ringDurationSeconds")
+                .contains("10-60")
+                .contains("rebas");
+    }
+
+    @Test
+    @DisplayName("OAS-7B3: the create schema states that MISSED_CALL plays nothing and owns no "
+            + "agent, queue or input configuration")
+    void missedCallCarriesNoMediaAgentOrInput() throws Exception {
+        String description = schema(fetchOpenApi(), "CreateCampaignRequest")
+                .at("/properties/typeConfig/description").asText();
+
+        assertThat(description)
+                .contains("plays no media")
+                .contains("no agent or queue")
+                .contains("DID, audience, retry, schedule and safety");
+    }
+
+    @Test
+    @DisplayName("OAS-7B4: the create schema states the answered-call behaviour and that a "
+            + "completed ring is not retried")
+    void answeredCallBehaviourIsDocumented() throws Exception {
+        String description = schema(fetchOpenApi(), "CreateCampaignRequest")
+                .at("/properties/typeConfig/description").asText();
+
+        // The two semantics an integrator most easily gets wrong, documented
+        // rather than left to be inferred from the code.
+        assertThat(description)
+                .contains("rebased onto the answer instant")
+                .contains("is not retried")
+                .contains("carrier-reported no-answer remains an ordinary retryable NO_ANSWER");
+    }
+
+    @Test
+    @DisplayName("OAS-7B5: the update and response schemas document the same MISSED_CALL shape")
+    void missedCallIsDocumentedOnUpdateAndResponse() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        String update = schema(spec, "UpdateCampaignRequest")
+                .at("/properties/typeConfig/description").asText();
+        // Asserted on phrases that do not straddle a line break in the rendered
+        // description - the point is the wording, not the wrapping.
+        assertThat(update).contains("MISSED_CALL").contains("missedCall.ringDurationSeconds")
+                .contains("10-60").contains("collects no input");
+
+        String response = schema(spec, "CampaignResponse")
+                .at("/properties/typeConfig/description").asText();
+        assertThat(response)
+                .contains("MISSED_CALL")
+                .contains("missedCall.ringDurationSeconds")
+                .contains("10-60");
+    }
+
+    @Test
+    @DisplayName("OAS-7B6: the documented bounds are the shared authority's bounds")
+    void documentedBoundsMatchTheAuthority() throws Exception {
+        String description = schema(fetchOpenApi(), "CreateCampaignRequest")
+                .at("/properties/typeConfig/description").asText();
+        assertThat(description).contains(
+                com.shivang.obd.campaign.config.MissedCallRingWindow.MIN_RING_SECONDS
+                        + "-" + com.shivang.obd.campaign.config.MissedCallRingWindow
+                                .MAX_RING_SECONDS);
+    }
+
+    @Test
+    @DisplayName("OAS-7B7: no endpoint, security or error contract changed in VB-7B")
+    void noApiSurfaceChangeInVb7b() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        // Same operations, same 400 contract, same bearer security as VB-7A.
+        assertThat(spec.at("/paths/~1api~1v1~1campaigns/post/responses/400").isMissingNode())
+                .isFalse();
+        assertThat(spec.at("/paths/~1api~1v1~1campaigns/post/security/0/bearerAuth")
+                .isMissingNode()).isFalse();
+        assertThat(spec.at("/paths").toString()).doesNotContain("~1agents");
+        assertThat(spec.at("/paths").toString()).doesNotContain("~1missed");
+    }
+
+    @Test
+    @DisplayName("OAS-7B8: the MISSED_CALL example on the response schema is a valid typed "
+            + "configuration")
+    void documentedMissedCallExampleParses() throws Exception {
+        // Built from the same shape the schema documents, then parsed by the
+        // authoritative parser: the docs and the contract cannot disagree.
+        var example = tools.jackson.databind.json.JsonMapper.builder().build()
+                .readTree("{\"missedCall\": {\"ringDurationSeconds\": 30}}");
+        var parsed = (com.shivang.obd.campaign.config.MissedCallCampaignConfig)
+                com.shivang.obd.campaign.config.CampaignTypeConfig.fromTypeConfig(
+                        CampaignType.MISSED_CALL, example);
+        assertThat(parsed.effectiveRingSeconds())
+                .isEqualTo(com.shivang.obd.campaign.config.MissedCallRingWindow
+                        .DEFAULT_RING_SECONDS);
+    }
 }

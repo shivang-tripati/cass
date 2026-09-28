@@ -15,7 +15,7 @@ import tools.jackson.databind.JsonNode;
  */
 public sealed interface CampaignTypeConfig
         permits PlayfileCampaignConfig, DtmfCampaignConfig, IvrCampaignConfig,
-                ConnectByAgentCampaignConfig {
+                ConnectByAgentCampaignConfig, MissedCallCampaignConfig {
 
     /** The campaign type this configuration belongs to. */
     CampaignType campaignType();
@@ -49,6 +49,7 @@ public sealed interface CampaignTypeConfig
                     ? IvrCampaignConfig.fromTypeConfig(typeConfig).orElseThrow()
                     : DtmfCampaignConfig.fromTypeConfig(typeConfig);
             case CONNECT_BY_AGENT -> ConnectByAgentCampaignConfig.fromTypeConfig(typeConfig);
+            case MISSED_CALL -> MissedCallCampaignConfig.fromTypeConfig(typeConfig);
         };
     }
 }

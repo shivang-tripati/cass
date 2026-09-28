@@ -37,7 +37,11 @@ public record CampaignResponse(
         + "`connectByAgent.queueId` (the referenced queue, owned by this tenant), "
         + "`connectByAgent.selectionStrategy` (only `LEAST_ACTIVE_RESERVATIONS` is "
         + "supported), and `connectByAgent.ringDurationSeconds` (10-240). Live agent "
-        + "availability and queue depth are runtime facts and are never returned here.",
+        + "availability and queue depth are runtime facts and are never returned here.\n\n"
+        + "For **MISSED_CALL** it is `missedCall.ringDurationSeconds` (10-60): the whole "
+        + "time budget for ringing before answer and, rebased onto answer, the maximum "
+        + "connected duration afterwards. No agent, queue, media or input state is ever "
+        + "returned here.",
         example = "{\"connectByAgent\": {\"queueId\": \"3f2504e0-4f89-11d3-9a0c-0305e82c3301\", "
             + "\"selectionStrategy\": \"LEAST_ACTIVE_RESERVATIONS\", "
             + "\"ringDurationSeconds\": 60}}")

@@ -118,16 +118,36 @@ public class StaleCallReconciler {
     private final CallAttemptRepository attemptRepository;
     private final VoiceMediaController mediaController;
     private final EntityManager entityManager;
+    /**
+     * VB-7B: policies that own a session's deadline themselves. Optional - a
+     * {@code null} provider means nothing else competes for this column and this
+     * sweeper behaves exactly as it did before VB-7B.
+     */
+    private final org.springframework.beans.factory.ObjectProvider<CallSessionDeadlineOwner>
+            deadlineOwners;
 
+    /** The pre-VB-7B constructor, retained so every existing construction site is unchanged. */
     public StaleCallReconciler(
             CallSessionRepository callSessionRepository,
             CallAttemptRepository attemptRepository,
             VoiceMediaController mediaController,
             EntityManager entityManager) {
+        this(callSessionRepository, attemptRepository, mediaController, entityManager, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public StaleCallReconciler(
+            CallSessionRepository callSessionRepository,
+            CallAttemptRepository attemptRepository,
+            VoiceMediaController mediaController,
+            EntityManager entityManager,
+            org.springframework.beans.factory.ObjectProvider<CallSessionDeadlineOwner>
+                    deadlineOwners) {
         this.callSessionRepository = callSessionRepository;
         this.attemptRepository = attemptRepository;
         this.mediaController = mediaController;
         this.entityManager = entityManager;
+        this.deadlineOwners = deadlineOwners;
     }
 
     /**
@@ -261,6 +281,20 @@ public class StaleCallReconciler {
                 || session.getDeadlineAt() == null
                 || session.getDeadlineAt().isAfter(Instant.now())) {
             return false; // already handled, or not actually overdue
+        }
+        // VB-7B: a session may carry a deadline that is a campaign MISSION
+        // budget rather than the maximum-call-duration cap this sweeper owns
+        // (MISSED_CALL: reaching the deadline IS the success, so this sweeper
+        // must not record a failure code over it). Declining is the whole
+        // interaction - the owning policy terminates it without recording a
+        // failure, which is what makes the hangup classify as COMPLETED.
+        if (deadlineOwners != null) {
+            CallSessionDeadlineOwner owner = deadlineOwners.getIfAvailable();
+            if (owner != null && owner.ownsDeadline(session)) {
+                log.debug("Session {} deadline is owned by a campaign policy - "
+                        + "leaving it to that policy", sessionId);
+                return false;
+            }
         }
         // Idempotency: a failure code already on the session means teardown was
         // already initiated for this call, by this sweeper or by any other
