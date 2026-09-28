@@ -751,6 +751,20 @@ class CampaignGovernanceHardeningPostgresIntegrationTest {
             c.setTtsTemplateId(ttsTemplateId);
             c.setDidId(didId);
             c.setContactGroupId(contactGroupId);
+        // VB-7C.1: the dial path resolves the VB-6C daily-usage-day zone from
+        // the execution snapshot and fails every attempt with a PERMANENT
+        // EXECUTION_TIMEZONE_INVALID when it is absent - with no campaign-type
+        // branch on that path at all. Readiness therefore requires a timezone
+        // for every campaign, not only for the types an old membership list
+        // happened to name.
+        //
+        // This seeder previously left schedule null, and was only ever "ready"
+        // because the rule sat behind that list AND inside a `schedule != null`
+        // branch. A campaign that cannot be dialled is not ready. A windowless
+        // schedule carrying a timezone is the minimal correction, and keeps
+        // every test in this class scoped to its own dimension - a date window
+        // would introduce SCHEDULE_NOT_ELIGIBLE depending on the day it runs.
+        c.setSchedule(new ScheduleSpec(null, null, null, null, "Asia/Kolkata", null, null));
             c.setRetryPolicy(new RetryPolicySpec(0, null, RetryStrategy.FIXED));
             return campaignRepository.saveAndFlush(c).getId();
         });

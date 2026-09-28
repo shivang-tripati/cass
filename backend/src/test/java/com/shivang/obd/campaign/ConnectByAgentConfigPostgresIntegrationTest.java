@@ -536,6 +536,13 @@ class ConnectByAgentConfigPostgresIntegrationTest {
             c.setStatus(CampaignStatus.SCHEDULED);
             c.setDidId(didId);
             c.setContactGroupId(groupId);
+        // VB-7C.1: a campaign with no execution timezone cannot be dialled at all -
+        // OutboundDialService passes the snapshot zone to DailyDialLimitService,
+        // which throws ExecutionTimezoneInvalidException (PERMANENT) on a null or
+        // blank zone, with no JVM/UTC fallback. Readiness therefore requires a
+        // timezone for every campaign. A windowless schedule is the minimal way
+        // to satisfy it and keeps these tests scoped to their own dimension.
+        c.setSchedule(new ScheduleSpec(null, null, null, null, "Asia/Kolkata", null, null));
             c.setRetryPolicy(new RetryPolicySpec(0, null, RetryStrategy.FIXED));
             c.setTypeConfig(connectByAgentJson(queueId, ringSeconds));
             return campaignRepository.saveAndFlush(c).getId();

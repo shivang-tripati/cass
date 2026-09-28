@@ -412,8 +412,20 @@ public class CampaignService {
         // way to find out short of reading logs. It is now rejected at
         // configuration time so a campaign can never be created in a state that
         // is guaranteed to fail. TTS playback is a future phase.
-        if (type == CampaignType.PLAYFILE && mode == ContentMode.TTS) {
-            throw business("PLAYFILE campaigns do not support TTS content yet; "
+        // VB-7C.1: TTS is a CONTENT MODE with no runtime. The original guard was
+        // `type == PLAYFILE && mode == TTS`, a per-type deny, so it protected
+        // exactly the type VB-6E happened to be hardening at the time and left
+        // every other media-playing type exposed. DTMF therefore accepted TTS,
+        // passed readiness, and then failed every call with a PERMANENT
+        // PLAYBACK_CONFIG_INVALID - the same "build it, approve it, watch 100%
+        // of it fail" defect VB-6E fixed for PLAYFILE.
+        //
+        // The correct axis is the capability, not the type: a type that plays
+        // media cannot be configured with a content mode the platform cannot
+        // render. Types that play nothing (CONNECT_BY_AGENT, MISSED_CALL) are
+        // deliberately unaffected - their content mode is inert, not broken.
+        if (type.playsMedia() && mode == ContentMode.TTS) {
+            throw business(type + " campaigns do not support TTS content yet; "
                 + "configure an approved audio asset with content mode AUDIO. "
                 + "TTS playback is not implemented.");
         }
@@ -432,13 +444,13 @@ public class CampaignService {
             }
         }
 
-        // VB-7B: the content requirement is stated as an INCLUSIVE list on
-        // purpose. The previous form, `type != CONNECT_BY_AGENT`, was correct
-        // only while the enum had exactly three values: adding MISSED_CALL
-        // would have demanded audio/TTS content from a campaign type that plays
-        // no media at all. An inclusive list is safe by construction — a future
-        // fifth type is excluded until someone deliberately adds it.
-        if ((type == CampaignType.PLAYFILE || type == CampaignType.DTMF) && mode == null) {
+        // VB-7B replaced a negated `type != CONNECT_BY_AGENT` with an inclusive
+        // `PLAYFILE || DTMF` list, which is safer but still a list.
+        // VB-7C.1 removes the list entirely: the rule is "a type that plays
+        // media needs content", which is exactly `playsMedia()`. A fifth type
+        // can no longer be silently omitted, and the behaviour for all four
+        // existing types is unchanged.
+        if (type.playsMedia() && mode == null) {
             throw business(type + " campaigns require content (audio or TTS).");
         }
     }

@@ -115,6 +115,22 @@ public class CampaignReadinessService {
             checkScheduleReadiness(campaign, reasons);
         }
 
+        // 2b. VB-7C.1: the execution-timezone requirement is NOT a schedule
+        // concern and was never covered by checkScheduleReadiness. It belongs to
+        // the dial path, which is universal: OutboundDialService resolves the
+        // VB-6C daily-usage-day zone from the execution snapshot and raises
+        // EXECUTION_TIMEZONE_INVALID (a PERMANENT, non-retryable failure) when it
+        // is absent - unconditionally, with no campaign-type branch. So a
+        // campaign with no timezone is undialable regardless of its type, and a
+        // campaign with no schedule object at all is equally undialable.
+        //
+        // Both were fail-open. The first omitted MISSED_CALL from a type list;
+        // the second skipped the whole check because schedule was null. Either
+        // way a campaign could be created and reported ready, then fail 100% of
+        // calls with no signal beyond a log line. Evaluated here, unfiltered by
+        // type, and outside the schedule branch so it cannot be bypassed.
+        checkExecutionTimezone(campaign, reasons);
+
         // 3. Content configuration check
         checkContentConfiguration(campaign, reasons);
 
@@ -186,26 +202,17 @@ public class CampaignReadinessService {
             }
         }
 
-        // VB-6C.1: the Voice Blast daily dial limit computes the usage day
-        // in this timezone, so a Voice Blast campaign without one has an
-        // undefined day boundary and is not ready to execute. This extends
-        // the existing readiness rule ("a window requires a timezone") to
-        // the timezone-free always-on case for campaigns whose dial path
-        // now depends on an authoritative zone. No JVM/UTC fallback exists
-        // at dial time (EXECUTION_TIMEZONE_INVALID), so readiness fails
-        // closed here with the same deterministic outcome.
-        if (campaign.getCampaignType() == CampaignType.PLAYFILE
-                || campaign.getCampaignType() == CampaignType.DTMF
-                || campaign.getCampaignType() == CampaignType.CONNECT_BY_AGENT) {
-            if (schedule.getTimezone() == null || schedule.getTimezone().isBlank()) {
-                reasons.add(new CampaignReadinessReason(
-                    "SCHEDULE_TIMEZONE_REQUIRED",
-                    "Voice Blast campaigns require a schedule timezone for the "
-                        + "daily dial limit; no fallback zone is applied."
-                ));
-                return;
-            }
-        }
+        // VB-7C.1: the execution-timezone requirement that used to live here
+        // has moved to checkExecutionTimezone. It was expressed as a
+        // campaign-type membership list (PLAYFILE || DTMF ||
+        // CONNECT_BY_AGENT) that omitted MISSED_CALL, and it was skipped
+        // entirely when a campaign had no schedule object at all - so a
+        // MISSED_CALL campaign, or any campaign without a schedule, could be
+        // reported ready and then fail every dial with a PERMANENT
+        // EXECUTION_TIMEZONE_INVALID. The requirement is a property of the
+        // dial path, not of the campaign type, so it is now evaluated once for
+        // every type, outside this method. The window-coherence and
+        // IANA-validity rules below are unchanged.
 
         // If no window is configured, schedule is considered always eligible
         if (!windowConfigured) {
@@ -262,6 +269,52 @@ public class CampaignReadinessService {
     }
 
     /**
+     * VB-7C.1: a campaign is only runnable if it carries an authoritative
+     * execution timezone.
+     *
+     * <p><b>Why this is not a campaign-type rule.</b> The VB-6C daily dial limit
+     * computes its usage day in the execution snapshot's IANA zone, and
+     * {@code OutboundDialService} resolves that zone with
+     * {@code campaign.schedule() != null ? campaign.schedule().getTimezone()
+     * : null} — <b>no campaign-type branch anywhere on that path</b>. A missing
+     * or invalid zone therefore fails the attempt with
+     * {@code EXECUTION_TIMEZONE_INVALID}, which {@code CallFailureCode}
+     * classifies as {@code PERMANENT}. Every campaign type is dialled, so every
+     * campaign type needs the zone.
+     *
+     * <p><b>The two fail-opens this replaces.</b> The rule previously lived
+     * inside {@code checkScheduleReadiness} behind a campaign-type membership
+     * list, which meant (a) it was skipped for any type omitted from the list —
+     * {@code MISSED_CALL} was, so a MISSED_CALL campaign could be created and
+     * reported ready and then fail every dial — and (b) it was skipped entirely
+     * whenever {@code schedule == null}, because that whole method is guarded by
+     * {@code if (campaign.getSchedule() != null)}. A campaign with no schedule
+     * object at all is equally undialable and was equally reported ready.
+     *
+     * <p><b>No fallback is introduced.</b> The platform deliberately has no
+     * JVM/UTC/server-zone default for this value; adopting one here would hide
+     * the misconfiguration rather than fail closed, and would make the usage-day
+     * boundary differ from the operator's intent. Blank stays unready.
+     *
+     * <p>Evaluated for every campaign, outside the schedule branch, and with no
+     * reference to {@link CampaignType} — so no future type can be omitted from
+     * it. IANA validity is still checked separately by
+     * {@code checkScheduleReadiness} when a schedule exists, which is unchanged.
+     */
+    private void checkExecutionTimezone(
+            CampaignEntity campaign, List<CampaignReadinessReason> reasons) {
+        ScheduleSpec schedule = campaign.getSchedule();
+        String timezone = schedule == null ? null : schedule.getTimezone();
+        if (timezone == null || timezone.isBlank()) {
+            reasons.add(new CampaignReadinessReason(
+                "SCHEDULE_TIMEZONE_REQUIRED",
+                "Voice Blast campaigns require a schedule timezone for the "
+                    + "daily dial limit; no fallback zone is applied."
+            ));
+        }
+    }
+
+    /**
      * Validates content mode matches campaign type requirements.
      */
     private void checkContentConfiguration(CampaignEntity campaign, List<CampaignReadinessReason> reasons) {
@@ -295,11 +348,26 @@ public class CampaignReadinessService {
             ));
         }
 
-        // VB-7B: stated as an INCLUSIVE list, matching the write-time rule in
-        // CampaignService.validateContent. The previous `type != CONNECT_BY_AGENT`
-        // form was correct only while the enum had three values; MISSED_CALL
-        // plays no media and must not be told it requires content.
-        if ((type == CampaignType.PLAYFILE || type == CampaignType.DTMF) && mode == null) {
+        // VB-7C.1: both media rules are now derived from the type capability
+        // rather than from a membership list, matching
+        // CampaignService.validateContent exactly.
+        //
+        // 1. TTS has no runtime. A type that PLAYS MEDIA cannot be configured
+        //    with it, or every call would fail with a PERMANENT
+        //    PLAYBACK_CONFIG_INVALID. DTMF was previously not covered here (the
+        //    write-time guard was PLAYFILE-only), so a DTMF campaign could be
+        //    stored with TTS and fail at dial time. Types that play nothing are
+        //    deliberately unaffected.
+        if (type.playsMedia() && mode == ContentMode.TTS) {
+            reasons.add(new CampaignReadinessReason(
+                "INVALID_CONTENT_CONFIGURATION",
+                type + " campaigns do not support TTS content yet; TTS playback "
+                    + "is not implemented. Configure an approved audio asset."
+            ));
+        }
+
+        // 2. A type that plays media needs something to play.
+        if (type.playsMedia() && mode == null) {
             reasons.add(new CampaignReadinessReason(
                 "MISSING_REQUIRED_REFERENCE",
                 type + " campaigns require content (audio or TTS)."
