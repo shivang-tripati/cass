@@ -171,7 +171,23 @@ public class EslClient implements AutoCloseable {
     // Event subscription
     // =====================================================================
 
-    /** ESL events the platform consumes (unchanged from VB-1). */
+    /**
+     * ESL events the platform consumes.
+     *
+     * <p>{@code CHANNEL_EXECUTE_COMPLETE} was added in Phase D. It is the only
+     * event that distinguishes a <em>completed playback request</em> from a
+     * <em>playback request that never started</em>, and that distinction is the
+     * whole of J2. Measured on the live switch, for one {@code uuid_broadcast}:
+     *
+     * <pre>
+     * valid file   -&gt; CHANNEL_EXECUTE, PLAYBACK_START, PLAYBACK_STOP, CHANNEL_EXECUTE_COMPLETE
+     * missing file -&gt; CHANNEL_EXECUTE, CHANNEL_EXECUTE_COMPLETE
+     * </pre>
+     *
+     * <p>Both cases answer the command identically ({@code +OK Message sent}) and
+     * neither produces {@code PLAYBACK_ERROR}. See
+     * {@link EslEventService#handlePlaybackLifecycle}.
+     */
     static final String[] SUBSCRIBED_EVENTS = {
             "CHANNEL_CREATE",
             "CHANNEL_PROGRESS",
@@ -182,7 +198,8 @@ public class EslClient implements AutoCloseable {
             "PLAYBACK_START",
             "PLAYBACK_STOP",
             "PLAYBACK_ERROR",
-            "CHANNEL_BRIDGE"
+            "CHANNEL_BRIDGE",
+            "CHANNEL_EXECUTE_COMPLETE"
     };
 
     /**
@@ -351,9 +368,21 @@ public class EslClient implements AutoCloseable {
      *
      * <p>Uses {@code uuid_broadcast <uuid> <path> aleg} so the file is played
      * to the A-leg only (the customer channel), which is correct for voice
-     * blast. FreeSWITCH fires PLAYBACK_START when playback begins and
-     * PLAYBACK_STOP when it completes (or PLAYBACK_ERROR on failure) —
-     * command acceptance is NOT completion.
+     * blast.
+     *
+     * <h2>Acceptance is NOT playback (Phase D, J2)</h2>
+     *
+     * <p>FreeSWITCH answers {@code +OK Message sent} whether or not the file can
+     * be opened, so this method's success says nothing about whether audio
+     * played. Measured on the live switch: a missing file produced no
+     * {@code PLAYBACK_ERROR} and no {@code Playback-Error} header at all.
+     *
+     * <p>Completion is therefore established from the event stream, not from
+     * this call: {@code PLAYBACK_START} proves playback began,
+     * {@code PLAYBACK_STOP} proves it completed, and a
+     * {@code CHANNEL_EXECUTE_COMPLETE} that arrives with no preceding
+     * {@code PLAYBACK_START} proves the request finished without ever starting.
+     * See {@link EslEventService#handlePlaybackLifecycle}.
      *
      * @param audioPath a path FreeSWITCH can resolve (VB-6E maps the asset's
      *                  logical storage reference to one; the raw reference is
@@ -383,8 +412,123 @@ public class EslClient implements AutoCloseable {
         executeUuidCommand("uuid_bridge " + primaryUuid + " " + otherUuid, "bridge");
     }
 
+    /**
+     * Places a call on the <em>internal</em> profile, bypassing the gateway.
+     *
+     * <p>Exists for integration verification against a switch with no carrier.
+     * {@link #originate} is gateway-shaped by design - the production contract is
+     * {@code sofia/gateway/&lt;gateway&gt;/&lt;destination&gt;} - and the only
+     * configured gateway points at a provider that does not exist, so a
+     * gateway-shaped originate cannot place a local call at all. This method
+     * reaches a locally registered extension directly, which is what makes the
+     * live event contract observable without inventing a carrier.
+     *
+     * <p>It is deliberately narrow: no gateway, no profile indirection, and the
+     * destination is used verbatim after the {@code sofia/internal/} prefix. No
+     * production code path calls it.
+     *
+     * @param channelUuid     the identity to pin, echoed back on every event
+     * @param userAtHost      e.g. {@code 1002@172.25.0.4}
+     */
+    public void originateOnInternalProfile(String channelUuid, String userAtHost) {
+        requireAuthenticated();
+        requireUuid(channelUuid, "originateOnInternalProfile");
+        if (userAtHost == null || userAtHost.isBlank()) {
+            throw new IllegalArgumentException("Destination is required");
+        }
+        // bgapi is a genuine inbound command, so it is NOT api-prefixed.
+        execute("bgapi originate {origination_uuid=" + channelUuid
+                        + ",origination_caller_id_number=+15551230000}sofia/internal/"
+                        + userAtHost + " &park()",
+                "originateOnInternalProfile");
+    }
+
+    /**
+     * Runs an {@code api} command and returns its response body.
+     *
+     * <p>Phase D, found by running against the live switch. An {@code api} reply
+     * is <em>not</em> a command reply: it arrives as
+     * {@code Content-Type: api/response} with an <strong>empty</strong>
+     * {@code Reply-Text}, and the actual result is the body. The shared
+     * {@link #execute} path requires {@code +OK} and therefore rejects a
+     * perfectly successful {@code api} call - which is how this method first
+     * failed against real FreeSWITCH.
+     *
+     * <p>So the verdict here is {@code -ERR} only. A successful {@code api} call
+     * has no verdict to check, and treating "no verdict" as failure is exactly
+     * the assumption that broke.
+     *
+     * @param command the API command, without the {@code api } prefix
+     * @return the response body, or {@code ""} when there is none
+     * @throws EslException if the switch reports {@code -ERR}, or on I/O failure
+     */
+    public String apiStatus(String command) {
+        return executeApi(command, "api " + command).body();
+    }
+
+    /**
+     * Sends an {@code api}-prefixed command and interprets its reply.
+     *
+     * <p>Shared by {@link #apiStatus} and the channel-addressed commands, because
+     * both have the same reply shape and both were wrong in the same way.
+     *
+     * <p>An {@code api} reply is <em>not</em> a command reply. It arrives as
+     * {@code Content-Type: api/response} with an <strong>empty</strong>
+     * {@code Reply-Text}, and the result is the body. The shared
+     * {@link #execute} path requires {@code +OK} and therefore rejects
+     * perfectly successful {@code api} calls. Both failure modes below were
+     * found by running against the live switch, not by reading a spec:
+     *
+     * <pre>
+     * api status                    -&gt; Content-Type: api/response, Reply-Text: ''
+     * api uuid_kill &lt;uuid&gt; CLEAR    -&gt; Content-Type: api/response, Reply-Text: ''
+     * </pre>
+     *
+     * <p>So the only verdict that means failure here is {@code -ERR}. Treating
+     * "no verdict" as failure is precisely the assumption that broke.
+     */
+    private EslMessage executeApi(String command, String operation) {
+        try {
+            sendCommand("api " + command);
+            EslMessage reply = readMessage();
+            if (reply.isError()) {
+                String message = reply.verdict();
+                log.warn("FreeSWITCH {} rejected: {}", operation, message);
+                throw new EslException(operation + " rejected: " + message);
+            }
+            return reply;
+        } catch (SocketTimeoutException e) {
+            throw new EslException("Command timeout during " + operation, e);
+        } catch (IOException e) {
+            throw new EslException("I/O error during " + operation, e);
+        }
+    }
+
+    /**
+     * Executes a FreeSWITCH API that is addressed by channel UUID.
+     *
+     * <p><strong>Phase D, and the most severe defect this phase found.</strong>
+     * These commands must be sent as {@code api <command>}, not as a bare
+     * inbound command. ESL accepts a fixed set of inbound commands - {@code api},
+     * {@code bgapi}, {@code event}, {@code filter}, {@code linger}, {@code exit},
+     * {@code hup}, {@code log} - and anything else is rejected. Measured against
+     * the live switch:
+     *
+     * <pre>
+     * uuid_kill &lt;uuid&gt; NORMAL_CLEARING       -&gt; -ERR command not found
+     * api uuid_kill &lt;uuid&gt; NORMAL_CLEARING   -&gt; accepted
+     * uuid_broadcast &lt;uuid&gt; &lt;path&gt; aleg    -&gt; -ERR command not found
+     * api uuid_broadcast &lt;uuid&gt; &lt;path&gt; aleg -&gt; accepted
+     * </pre>
+     *
+     * <p>So playback, hangup and bridge were all being rejected by the provider.
+     * The whole test suite passed regardless, because the protocol double
+     * answered {@code +OK accepted} to every command it did not recognise - the
+     * failure mode this whole phase exists to eliminate. {@code bgapi} is
+     * genuinely a bare inbound command, which is why originate worked.
+     */
     private void executeUuidCommand(String command, String operation) {
-        EslMessage reply = execute(command, operation);
+        executeApi(command, operation);
         log.debug("FreeSWITCH {} accepted for channel", operation);
     }
 

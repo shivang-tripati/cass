@@ -140,7 +140,7 @@ public class CampaignConfigurationService {
         LocalDateInterval interval = schedule == null
                 ? LocalDateInterval.empty()
                 : new LocalDateInterval(
-                        schedule.getStartDate(), schedule.getEndDate(),
+                        schedule.getStartDate(),
                         schedule.getStartTime(), schedule.getEndTime(),
                         schedule.getTimezone(), schedule.getAllowedDaysOfWeek(),
                         schedule.getHolidayCalendarId());
@@ -155,7 +155,7 @@ public class CampaignConfigurationService {
                 campaign.getContentMode(),
                 campaign.getAudioAssetId(),
                 campaign.getTtsTemplateId(),
-                interval.startDate(), interval.endDate(),
+                interval.startDate(),
                 interval.startTime(), interval.endTime(),
                 interval.timezone(), interval.allowedDaysOfWeek(),
                 interval.holidayCalendarId(),
@@ -179,6 +179,18 @@ public class CampaignConfigurationService {
                 campaign.getMaxCallDurationSeconds(),
                 // Canonical validated JSON (compatibility codec output).
                 validatedTypeConfig.toJson(),
+                // VB-7C.3: the integration configuration is frozen here, for the
+                // same reason as every other execution-affecting field: a later
+                // campaign edit must not change what a running execution does
+                // with it. Captured as the CANONICAL validated serialization, so
+                // what is frozen is the platform's interpretation rather than the
+                // client's raw JSON.
+                //
+                // Null is preserved verbatim and is NOT defaulted into an
+                // enabled=false / FULL block: "never configured" and "configured
+                // to the default" are different facts, and a future consumer must
+                // be able to tell them apart.
+                validatedIntegrationConfig(campaign),
                 Boolean.TRUE.equals(campaign.getCallOnWhitelistNumbers()),
                 // VB-6C.2: the configured daily dial limit is frozen here.
                 // Null is preserved verbatim (platform-default semantics);
@@ -186,10 +198,33 @@ public class CampaignConfigurationService {
                 campaign.getDailyDialLimit());
     }
 
+    /**
+     * VB-7C.3: the campaign's integration configuration, validated and frozen.
+     *
+     * <p>Re-parsed here rather than copied from the entity so the snapshot can
+     * only ever contain a payload the platform is able to interpret. A campaign
+     * row written by an older or newer version, or edited directly in the
+     * database, that cannot be parsed fails execution creation deterministically
+     * instead of producing a snapshot a future consumer would misread.
+     *
+     * @return the canonical JSON, or {@code null} when the campaign configured no
+     *         integration block
+     * @throws CampaignConfigInvalidException when the stored payload is unusable
+     */
+    private static tools.jackson.databind.JsonNode validatedIntegrationConfig(
+            CampaignEntity campaign) {
+        tools.jackson.databind.JsonNode stored = campaign.getIntegrationConfig();
+        if (stored == null || stored.isNull()) {
+            return null;
+        }
+        return com.shivang.obd.campaign.config.CampaignIntegrationConfig
+                .fromJson(stored)
+                .toJson();
+    }
+
     /** Internal carrier for schedule fields (avoids null-spread conditionals). */
     private record LocalDateInterval(
             java.time.LocalDate startDate,
-            java.time.LocalDate endDate,
             java.time.LocalTime startTime,
             java.time.LocalTime endTime,
             String timezone,
@@ -197,7 +232,7 @@ public class CampaignConfigurationService {
             UUID holidayCalendarId) {
 
         static LocalDateInterval empty() {
-            return new LocalDateInterval(null, null, null, null, null, null, null);
+            return new LocalDateInterval(null, null, null, null, null, null);
         }
     }
 }

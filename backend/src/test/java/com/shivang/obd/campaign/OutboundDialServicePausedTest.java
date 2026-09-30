@@ -127,10 +127,36 @@ class OutboundDialServicePausedTest {
         execution.setId(EXECUTION_ID);
         execution.setTenantId(TENANT);
         execution.setCampaignId(CAMPAIGN_ID);
+        // VB-8D: the dial path now refuses a terminal execution before any
+        // dispatch work, so a live fixture must actually be live.
+        execution.setStatus(CampaignExecutionStatus.RUNNING);
         when(executionRepository.findByIdAndDeletedAtIsNull(EXECUTION_ID))
                 .thenReturn(Optional.of(execution));
         when(runtimeConfigResolver.resolve(any()))
                 .thenReturn(snapshotConfig());
+
+        // VB-8D: the dial step now claims each due attempt with one conditional
+        // QUEUED -> IN_PROGRESS update before it dispatches, then re-reads it.
+        // This mirrors the database faithfully - the claim really moves the row -
+        // so the tests keep asserting on the same fixture object they always did.
+        lenient().when(attemptRepository.claimForDispatch(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq(CallAttemptStatus.QUEUED),
+                        org.mockito.ArgumentMatchers.eq(CallAttemptStatus.IN_PROGRESS),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> {
+                    CallAttempt claimed = currentAttempt();
+                    if (claimed.getStatus() != CallAttemptStatus.QUEUED) {
+                        return 0;
+                    }
+                    claimed.setStatus(CallAttemptStatus.IN_PROGRESS);
+                    claimed.setStartedAt(java.time.Instant.now());
+                    return 1;
+                });
+        lenient().when(attemptRepository.findByIdAndTenantIdAndDeletedAtIsNull(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> Optional.ofNullable(currentAttempt()));
 
         service = new OutboundDialService(
                 attemptRepository, contactRepository,
@@ -138,7 +164,7 @@ class OutboundDialServicePausedTest {
                 executionRepository,
                 runtimeConfigResolver, dialer, eligibility, routing,
                 capacity, mock(CallSessionRepository.class), mock(CallLegRepository.class),
-                dialLimitService, attemptSafety, new PreDispatchFailureMapper());
+                dialLimitService, attemptSafety, new PreDispatchFailureMapper(), TransactionTestSupport.direct(), new ExecutionScheduleCalculator());
     }
 
     /** A valid frozen snapshot config: PLAYFILE, AUDIO, with a timezone. */

@@ -61,6 +61,12 @@ public class CampaignExecutionService {
 
         authorizationService.requireCapability(userId, CAP_EXECUTE, AccessCheck.forTenant(tenantId));
 
+        // VB-8J: the campaign row is locked so that concurrent creators of THIS
+        // campaign serialise. It is a row lock rather than a global or advisory
+        // lock, so creators of different campaigns do not contend, and it needs
+        // no new infrastructure.
+        lockCampaignForExecutionCreation(campaignId, tenantId);
+
         // Re-check readiness before creating execution
         CampaignReadinessResponse readiness = readinessService.evaluate(campaignId);
         if (!readiness.ready()) {
@@ -76,6 +82,28 @@ public class CampaignExecutionService {
             if (existing.isPresent()) {
                 return ResponseFactory.ok(mapToResponse(existing.get()));
             }
+        }
+
+        // VB-8J: at most one in-flight execution per campaign.
+        //
+        // Without this, two concurrent creates each materialise an attempt for
+        // EVERY contact in the audience, so the same contact is dialled once per
+        // execution. The daily contact and attempt limits would cap the damage
+        // but not prevent it, and they are safety ceilings, not intent.
+        //
+        // Deliberately LAST, after readiness and after the idempotency lookup:
+        //
+        //  - After idempotency, because retrying a request with the same key is
+        //    exactly the case the key exists for. It must return the first
+        //    execution, not collide with it.
+        //  - After readiness, because readiness reports a fact about the
+        //    campaign's configuration, while this reports a fact about execution
+        //    state. A disabled queue should still surface as the disabled queue.
+        if (executionRepository.existsActiveByCampaignId(campaignId)) {
+            throw new BusinessException(
+                CommonErrorCode.BUSINESS_RULE_VIOLATION,
+                "Campaign already has an execution in progress. Wait for it to reach a "
+                    + "terminal state, or pause it, before starting another.");
         }
 
         // Create the execution's immutable configuration snapshot FIRST
@@ -209,6 +237,21 @@ public class CampaignExecutionService {
         return new ResourceNotFoundException("Resource not found");
     }
 
+    /**
+     * VB-8J: takes a write lock on the campaign row for the remainder of the
+     * creating transaction.
+     *
+     * <p>A plain existence check would be a read-then-write race: two creators
+     * could both observe "no active execution" and both proceed, each
+     * materialising an attempt for every contact. Locking the row makes the
+     * second creator wait and then observe the first one's committed execution.
+     */
+    private void lockCampaignForExecutionCreation(UUID campaignId, UUID tenantId) {
+        if (executionRepository.lockCampaignRow(campaignId, tenantId) == 0) {
+            throw notFound();
+        }
+    }
+
     private CampaignExecutionResponse mapToResponse(CampaignExecution execution) {
         return new CampaignExecutionResponse(
                 execution.getId(),
@@ -221,7 +264,46 @@ public class CampaignExecutionService {
                 execution.getRequestedBy(),
                 execution.getStartedAt(),
                 execution.getCompletedAt(),
-                execution.getFailureReason()
+                execution.getFailureReason(),
+                deriveDeferredReason(execution)
         );
+    }
+
+    /**
+     * VB-8H (B10): why is this execution still {@code REQUESTED}?
+     *
+     * <p>Derived on read, never persisted, and deliberately limited to
+     * {@code REQUESTED} — the only status for which "not started yet" is a real
+     * question. {@code RUNNING} has started and terminal statuses are finished,
+     * so neither gets a deferred reason and the field can never be mistaken for
+     * a second failure reason.
+     *
+     * <p>An execution is only created while its campaign is ready, so the sole
+     * reason one can still be {@code REQUESTED} is that the campaign has since
+     * left the executable set. That is a deterministic function of the live
+     * campaign status, so it is computed here rather than stored: no migration,
+     * no stale column, and no second source of truth to drift. The scheduler
+     * applies exactly the same rule via
+     * {@code CampaignExecutionOrchestrator.isDeferredRatherThanFailed}, and the
+     * message text comes from the single canonical factory in
+     * {@link CampaignLifecyclePolicy}, so the two can never disagree.
+     *
+     * <p>Returns {@code null} when the execution is not deferred, and also when
+     * the campaign row cannot be read — a missing campaign is a data-integrity
+     * problem that the readiness path already reports, so this stays silent
+     * rather than inventing a reason.
+     */
+    private String deriveDeferredReason(CampaignExecution execution) {
+        if (execution.getStatus() != CampaignExecutionStatus.REQUESTED) {
+            return null;
+        }
+        var campaign = campaignRepository
+                .findByIdAndTenantIdAndDeletedAtIsNull(
+                        execution.getCampaignId(), execution.getTenantId())
+                .orElse(null);
+        if (campaign == null || CampaignLifecyclePolicy.isExecutable(campaign.getStatus())) {
+            return null;
+        }
+        return CampaignLifecyclePolicy.notExecutableReason(campaign.getStatus()).message();
     }
 }

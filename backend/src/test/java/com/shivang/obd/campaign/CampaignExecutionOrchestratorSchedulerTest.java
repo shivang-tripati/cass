@@ -83,6 +83,9 @@ class CampaignExecutionOrchestratorSchedulerTest {
                 readinessService,
                 org.mockito.Mockito.mock(com.shivang.obd.tenant.TenantRepository.class),
                 org.mockito.Mockito.mock(CampaignRuntimeConfigResolver.class),
+                // VB-8B: the one canonical calling-window calculation.
+                new ExecutionScheduleCalculator(),
+                TransactionTestSupport.direct(),
                 new RetryPolicyService(),
                 dialService, eslEventProcessor, staleCallReconciler);
     }

@@ -248,7 +248,7 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
             null, seedDid(tenantId),
             ContentMode.AUDIO, seedAudio(tenantId), null,
             new ScheduleConfig(
-                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 12, 31),
+                LocalDate.of(2026, 9, 1),
                 // A FULL-DAY window, deliberately. A bounded 09:00-18:00 window
                 // made execution readiness depend on the wall-clock time the
                 // suite happened to run at: this test asserts the frozen
@@ -332,7 +332,7 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
                 current.getContentMode(), current.getAudioAssetId(),
                 current.getTtsTemplateId(),
                 new ScheduleConfig(
-                    schedule.getStartDate(), schedule.getEndDate(),
+                    schedule.getStartDate(),
                     schedule.getStartTime(), schedule.getEndTime(),
                     schedule.getTimezone(), schedule.getAllowedDaysOfWeek(),
                     schedule.getHolidayCalendarId()),
@@ -369,9 +369,29 @@ class DailyDialLimitSnapshotPostgresIntegrationTest {
         assertThat(effectiveLimitOf(e1)).isEqualTo(3);
 
         // A NEW execution freezes the new value.
+        settle(e1);
+
         UUID e2 = createExecution(tenantId, campaignId);
         assertThat(snapshotLimit(e2)).isEqualTo(1);
         assertThat(effectiveLimitOf(e2)).isEqualTo(1);
+    }
+
+    /**
+     * VB-8J: settles an execution so a later one may be created.
+     *
+     * The product allows one in-flight execution per campaign, because two
+     * concurrent executions would materialise an attempt for every contact in
+     * the audience twice. Snapshot immutability does not depend on the pair
+     * being concurrent: what it asserts is that the frozen row is never
+     * rewritten, which a sequential pair establishes just as well.
+     */
+    private void settle(UUID executionId) {
+        tx().executeWithoutResult(t -> {
+            CampaignExecution e = executionRepository
+                    .findByIdAndDeletedAtIsNull(executionId).orElseThrow();
+            e.setStatus(CampaignExecutionStatus.COMPLETED);
+            executionRepository.saveAndFlush(e);
+        });
     }
 
     @Test

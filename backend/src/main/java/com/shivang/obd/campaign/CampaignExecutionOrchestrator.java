@@ -15,12 +15,7 @@ import com.shivang.obd.contact.ContactRepository;
 import com.shivang.obd.security.CurrentUserProvider;
 import com.shivang.obd.tenant.TenantEntity;
 import com.shivang.obd.tenant.TenantRepository;
-import java.time.DayOfWeek;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -66,6 +61,24 @@ public class CampaignExecutionOrchestrator {
     private final TenantRepository tenantRepository;
     /** Execution-scoped configuration resolution (immutable snapshot, VB-6A). */
     private final CampaignRuntimeConfigResolver runtimeConfigResolver;
+    /**
+     * VB-8B: the one authoritative calling-window calculation. Shared with
+     * {@code CallAttemptService} so no attempt-creating path can invent its own
+     * scheduling rule.
+     */
+    private final ExecutionScheduleCalculator scheduleCalculator;
+
+    /**
+     * VB-8D: the scheduler's explicit per-item transaction boundary.
+     *
+     * <p>A template, not an annotation, because the required boundary is per
+     * execution <em>inside</em> a loop that must itself hold none. An annotation
+     * on the loop's method would put every item in one transaction; an
+     * annotation on the item's method would be inert, because the loop calls it
+     * on {@code this}. Neither can express "one transaction per item", so the
+     * boundary is stated explicitly instead of implied.
+     */
+    private final org.springframework.transaction.support.TransactionTemplate txTemplate;
     /**
      * VB-6D.2: the single authority for "may this failed attempt be retried,
      * and when?". Injected rather than inlined so this class holds no failure
@@ -162,6 +175,14 @@ public class CampaignExecutionOrchestrator {
      *       and its capability check are unchanged.</li>
      * </ul>
      */
+    /**
+     * VB-8D: this annotation is effective for EXTERNAL callers, which reach
+     * this bean through the Spring proxy. The scheduler does NOT rely on it - it
+     * used to call this method on {@code this}, which bypassed the proxy and made
+     * the annotation inert. The scheduler now establishes its own transaction
+     * per execution via the injected template (see scheduledTick), so the
+     * annotation and the scheduler no longer have to agree.
+     */
     @Transactional
     public boolean startExecutionAsSystem(UUID executionId) {
         CampaignExecution execution = executionRepository
@@ -201,6 +222,31 @@ public class CampaignExecutionOrchestrator {
         CampaignReadinessResponse readiness = readinessService
             .evaluateForSystem(campaign.getId(), tenantId);
         if (!readiness.ready()) {
+            // VB-8B: WHY is live campaign state consulted here at all?
+            //
+            // Readiness is a PRE-EXECUTION gate: it decides whether this
+            // execution may start, not what the execution will do. Everything
+            // the execution actually does comes from the frozen snapshot
+            // (createInitialAttempts resolves CampaignRuntimeConfig below, and
+            // the dial path does the same), so this gate cannot change WHAT is
+            // executed.
+            //
+            // It is safe to read the live campaign here because campaign
+            // configuration can only be edited in a state that is never
+            // executable: a campaign that was edited is necessarily not
+            // executable, and a non-executable campaign yields
+            // CAMPAIGN_NOT_EXECUTABLE_STATE, which defers this execution rather
+            // than acting on it. So a post-snapshot edit can delay an execution
+            // but cannot silently reconfigure one.
+            //
+            // This is an INVARIANT, not an accident - see
+            // CampaignLifecyclePolicy.editableAndExecutableAreDisjoint() and
+            // CampaignLifecycleInvariantsTest, which exists to make a future
+            // change that breaks it loud. Note the limits honestly: the gate can
+            // still be moved by live RESOURCE degradation (a deleted asset, a
+            // withdrawn DID), which is intentional under the VB-6A
+            // snapshot-vs-resource rule, and it does not consult the snapshot's
+            // own validity.
             log.warn("Campaign {} not ready: {}", campaign.getId(), formatReasons(readiness.reasons()));
             // VB-6E: a campaign that is merely PAUSED (or SCHEDULED for later)
             // must NOT have its pending execution destroyed. Only a genuinely
@@ -311,14 +357,33 @@ public class CampaignExecutionOrchestrator {
      * and creates the next attempt if so.
      * Safe to call repeatedly.
      */
-    @Transactional
+    /**
+     * VB-8D: deliberately NOT {@code @Transactional}.
+     *
+     * <p>This method only SELECTS the running executions; each one is then
+     * processed in its own transaction by {@link #processRetriesForExecution}.
+     * Making the loop transactional would put every retry attempt in one
+     * transaction, so a single poisoned execution would roll back the retries
+     * of every other execution - the batch-wide blast radius this phase exists
+     * to remove. Selection needs no transaction, so it does not get one.
+     */
     public void processRetries() {
         // Find all RUNNING executions
         List<CampaignExecution> runningExecutions = executionRepository
             .findByStatusAndDeletedAtIsNull(CampaignExecutionStatus.RUNNING);
 
         for (CampaignExecution execution : runningExecutions) {
-            processRetriesForExecution(execution);
+            // VB-8D: one execution per transaction, and one poisoned execution
+            // must not stop the rest. The template gives this loop a real
+            // boundary per item, which the previous self-invoked @Transactional
+            // never did.
+            try {
+                txTemplate.executeWithoutResult(
+                        status -> processRetriesForExecution(execution));
+            } catch (RuntimeException e) {
+                log.error("Retry processing failed for execution {}; continuing with the "
+                        + "remaining executions of this tick", execution.getId(), e);
+            }
         }
     }
 
@@ -422,8 +487,27 @@ public class CampaignExecutionOrchestrator {
      * Called after attempt status changes to determine if execution is complete.
      * Safe to call repeatedly.
      */
+    /**
+     * VB-8D: as with {@link #startExecutionAsSystem}, this annotation applies to
+     * external callers reaching the bean through the proxy. The scheduler wraps
+     * each call in its own transaction instead of relying on a self-invoked
+     * annotation that never fired.
+     */
     @Transactional
     public void reconcileExecution(UUID executionId) {
+        reconcileExecutionInternal(executionId);
+    }
+
+    /**
+     * VB-8D: the reconciler's body, callable from inside a transaction the
+     * caller established itself.
+     *
+     * <p>Split out so the scheduler can give each execution its own transaction
+     * via the injected template. Calling {@link #reconcileExecution} directly
+     * would self-invoke, and that annotation never fired - which is exactly the
+     * defect this phase fixes.
+     */
+    private void reconcileExecutionInternal(UUID executionId) {
         CampaignExecution execution = findVisibleExecution(executionId, currentScope());
 
         // Only reconcile RUNNING executions
@@ -478,11 +562,19 @@ public class CampaignExecutionOrchestrator {
      *
      * <h2>VB-6E: transaction boundary</h2>
      *
-     * <p>The method itself is deliberately <b>not</b> {@code @Transactional}.
-     * Each step owns its transaction (they are invoked through the Spring
-     * proxy, or are themselves transactional), so one step's rollback cannot
-     * discard another's work — and, critically, the tick no longer holds a
-     * transaction open across outbound network I/O.
+     * <p>The method itself is deliberately <b>not</b> {@code @Transactional}, and
+     * the tick no longer holds a transaction open across outbound network I/O.
+     *
+     * <h2>VB-8D: how each step's transaction actually happens</h2>
+     *
+     * <p>This paragraph previously claimed each step "owns its transaction
+     * because they are invoked through the Spring proxy". That was false for
+     * this class: the steps call their own methods on {@code this}, so the proxy
+     * was bypassed and those annotations never fired. The boundaries are now
+     * stated explicitly - the injected {@code txTemplate} opens one transaction
+     * per execution inside the two multi-item loops, so a single poisoned item
+     * can no longer roll back its neighbours, and so no batch-wide transaction
+     * spans the dial step.
      *
      * <p>The cadence (30 s) and the single scheduler are unchanged; this is not
      * a new scheduler.
@@ -493,7 +585,15 @@ public class CampaignExecutionOrchestrator {
             List<CampaignExecution> requested = executionRepository
                 .findByStatusAndDeletedAtIsNull(CampaignExecutionStatus.REQUESTED);
             for (CampaignExecution ex : requested) {
-                startExecutionAsSystem(ex.getId());
+                // VB-8D: a real transaction per execution (the self-invoked
+                // @Transactional never fired) plus per-item isolation, so one
+                // unrunnable execution cannot stop the others from starting.
+                try {
+                    txTemplate.executeWithoutResult(status -> doStartExecution(ex));
+                } catch (RuntimeException e) {
+                    log.error("Starting execution {} failed; continuing with the remaining "
+                            + "executions of this tick", ex.getId(), e);
+                }
             }
         });
 
@@ -507,7 +607,14 @@ public class CampaignExecutionOrchestrator {
             List<CampaignExecution> running = executionRepository
                 .findByStatusAndDeletedAtIsNull(CampaignExecutionStatus.RUNNING);
             for (CampaignExecution ex : running) {
-                reconcileExecution(ex.getId());
+                // VB-8D: per-execution transaction plus per-item isolation.
+                try {
+                    txTemplate.executeWithoutResult(
+                            status -> reconcileExecutionInternal(ex.getId()));
+                } catch (RuntimeException e) {
+                    log.error("Reconciling execution {} failed; continuing with the remaining "
+                            + "executions of this tick", ex.getId(), e);
+                }
             }
         });
 
@@ -546,102 +653,21 @@ public class CampaignExecutionOrchestrator {
     // === internal ===
 
     private Instant calculateNextScheduledAt(ScheduleSpec schedule, Instant baseTime) {
-        if (schedule == null || schedule.getTimezone() == null || schedule.getTimezone().isBlank()) {
-            return baseTime; // No schedule constraints
-        }
-
-        ZoneId zone = ZoneId.of(schedule.getTimezone().trim());
-        ZonedDateTime zdt = baseTime.atZone(zone);
-
-        // If schedule window not configured, use base time
-        if (!isScheduleWindowConfigured(schedule)) {
-            return baseTime;
-        }
-
-        // Adjust to next valid time within the execution's schedule window
-        return adjustToScheduleWindow(schedule, baseTime);
+        return scheduleCalculator.calculateNextScheduledAt(schedule, baseTime);
     }
 
     /**
      * VB-6A correction overload: adjusts against the execution's snapshot
      * schedule. Day-of-week interpretation is identical to the plain
      * schedule overload.
+     *
+     * <p>VB-8B: the calculation itself now lives in
+     * {@link ExecutionScheduleCalculator} so the scheduler and the manual
+     * attempt path share one implementation. Behaviour is unchanged.
      */
     private Instant adjustToScheduleWindow(
             CampaignRuntimeConfigResolver.CampaignRuntimeConfig config, Instant proposedTime) {
-        return adjustToScheduleWindow(config.schedule(), proposedTime);
-    }
-
-    private Instant adjustToScheduleWindow(ScheduleSpec schedule, Instant proposedTime) {
-        if (schedule == null) {
-            return proposedTime;
-        }
-        if (schedule == null || schedule.getTimezone() == null || schedule.getTimezone().isBlank()) {
-            return proposedTime;
-        }
-
-        ZoneId zone = ZoneId.of(schedule.getTimezone().trim());
-        ZonedDateTime zdt = proposedTime.atZone(zone);
-        ZonedDateTime result = zdt;
-
-        // Ensure date is within [startDate, endDate]
-        LocalDate date = result.toLocalDate();
-        if (schedule.getStartDate() != null && date.isBefore(schedule.getStartDate())) {
-            result = schedule.getStartDate().atTime(result.toLocalTime()).atZone(zone);
-        }
-        if (schedule.getEndDate() != null && date.isAfter(schedule.getEndDate())) {
-            return schedule.getEndDate().plusDays(1).atStartOfDay(zone).toInstant(); // Past end
-        }
-
-        // Ensure time is within [startTime, endTime]
-        LocalTime time = result.toLocalTime();
-        if (schedule.getStartTime() != null && time.isBefore(schedule.getStartTime())) {
-            result = result.toLocalDate().atTime(schedule.getStartTime()).atZone(zone);
-        }
-        if (schedule.getEndTime() != null && time.isAfter(schedule.getEndTime())) {
-            // Next day at startTime
-            LocalDate nextDate = result.toLocalDate().plusDays(1);
-            if (schedule.getStartTime() != null) {
-                result = nextDate.atTime(schedule.getStartTime()).atZone(zone);
-            } else {
-                result = nextDate.atStartOfDay(zone);
-            }
-        }
-
-        // Ensure day of week is allowed
-        Set<DayOfWeek> allowedDays = schedule.getAllowedDaysOfWeek();
-        if (allowedDays != null && !allowedDays.isEmpty()) {
-            DayOfWeek day = result.getDayOfWeek();
-            if (!allowedDays.contains(day)) {
-                // Find next allowed day
-                int daysToAdd = 1;
-                while (daysToAdd <= 7) {
-                    DayOfWeek nextDay = day.plus(daysToAdd);
-                    if (allowedDays.contains(nextDay)) {
-                        result = result.plusDays(daysToAdd);
-                        break;
-                    }
-                    daysToAdd++;
-                }
-            }
-        }
-
-        // Holiday calendar is a reference only — not resolved in this phase
-        // ponytail: holidayCalendarId not resolved, add when HolidayCalendar module exists
-
-        // If adjusted time is in the past, return proposed (don't delay further)
-        if (result.toInstant().isBefore(proposedTime)) {
-            return proposedTime;
-        }
-
-        return result.toInstant();
-    }
-
-    private boolean isScheduleWindowConfigured(ScheduleSpec schedule) {
-        return schedule.getStartDate() != null
-            || schedule.getEndDate() != null
-            || schedule.getStartTime() != null
-            || schedule.getEndTime() != null;
+        return scheduleCalculator.adjustToScheduleWindow(config.schedule(), proposedTime);
     }
 
     /**

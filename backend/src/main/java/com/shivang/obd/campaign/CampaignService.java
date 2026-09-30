@@ -61,26 +61,71 @@ public class CampaignService {
     private static final String CAP_EXECUTE = "CAMPAIGN_EXECUTE";
 
     /**
-     * Legal lifecycle edges. System-driven edges (SCHEDULED→RUNNING,
-     * RUNNING→COMPLETED, RUNNING→FAILED) belong to the future execution
-     * engine and are rejected on the manual API until that domain exists.
+    /**
+     * VB-8H: legal lifecycle edges for the CAMPAIGN lifecycle.
+     *
+     * <p>The campaign lifecycle is <b>entirely operator-driven</b>. It is
+     * operational control state, not a record of what the engine did: a
+     * {@link CampaignExecution} already records what actually ran, and with
+     * more than one execution allowed per campaign, no single campaign status
+     * could faithfully mirror them all.
+     *
+     * <p>This table previously withheld three edges behind a
+     * {@code SYSTEM_DRIVEN_TRANSITIONS} set, on the stated assumption that "the
+     * execution engine" would perform them. That assumption is wrong twice over,
+     * and the resulting model was incoherent:
+     * <ul>
+     *   <li>no such producer exists, and none should: Campaign is control
+     *       state and Execution is the run record (VB-8H D8/D10);</li>
+     *   <li>it made the model unreachable in a nonsensical way. RUNNING could
+     *       only be entered from PAUSED, because PAUSED to RUNNING was never
+     *       withheld; and once entered it could never reach a terminal state,
+     *       because its only exits, RUNNING to COMPLETED and RUNNING to FAILED,
+     *       were withheld with no producer to replace them.</li>
+     * </ul>
+     *
+     * <p>The withholding is therefore removed and the table is what it should
+     * have been: a plain operator state machine. No engine behaviour moves as
+     * a result, because EXECUTABLE_STATUSES already treats both SCHEDULED and
+     * RUNNING as executable, and RUNNING was already reachable via
+     * PAUSED to RUNNING, so no dispatch, readiness or editability decision
+     * changes.
      */
     private static final Map<CampaignStatus, Set<CampaignStatus>> LEGAL_TRANSITIONS = Map.of(
         CampaignStatus.DRAFT, Set.of(CampaignStatus.SCHEDULED),
-        CampaignStatus.SCHEDULED, Set.of(CampaignStatus.RUNNING, CampaignStatus.PAUSED,
-            CampaignStatus.DRAFT, CampaignStatus.ARCHIVED),
-        CampaignStatus.RUNNING, Set.of(CampaignStatus.PAUSED, CampaignStatus.COMPLETED,
-            CampaignStatus.FAILED),
-        CampaignStatus.PAUSED, Set.of(CampaignStatus.SCHEDULED, CampaignStatus.RUNNING,
-            CampaignStatus.ARCHIVED),
+        CampaignStatus.SCHEDULED, Set.of(CampaignStatus.PAUSED, CampaignStatus.DRAFT,
+            CampaignStatus.ARCHIVED, CampaignStatus.RUNNING),
+        CampaignStatus.RUNNING, Set.of(CampaignStatus.PAUSED, CampaignStatus.ARCHIVED,
+            CampaignStatus.COMPLETED, CampaignStatus.FAILED),
+        CampaignStatus.PAUSED, Set.of(CampaignStatus.SCHEDULED, CampaignStatus.ARCHIVED,
+            CampaignStatus.RUNNING),
         CampaignStatus.COMPLETED, Set.of(CampaignStatus.ARCHIVED),
         CampaignStatus.FAILED, Set.of(CampaignStatus.ARCHIVED),
         CampaignStatus.ARCHIVED, Set.of());
 
-    private static final Set<String> SYSTEM_DRIVEN_TRANSITIONS = Set.of(
-        key(CampaignStatus.SCHEDULED, CampaignStatus.RUNNING),
-        key(CampaignStatus.RUNNING, CampaignStatus.COMPLETED),
-        key(CampaignStatus.RUNNING, CampaignStatus.FAILED));
+    /**
+     * VB-8J: states no operator may set, and which nothing produces.
+     *
+     * <p>These describe <em>execution</em> facts, not campaign configuration.
+     * A campaign has an immutable snapshot, an audience and a calling window -
+     * that is what this enum tracks. Whether work actually ran, and how it
+     * ended, belongs to {@link CampaignExecutionStatus}, which already models it
+     * correctly and is derived from real attempt outcomes.
+     *
+     * <p>They are retained rather than deleted because {@code ck_campaigns_status}
+     * is a database CHECK constraint (V15) and the values are part of the public
+     * contract; removing them is a schema change, not a code cleanup. No producer
+     * writes them, so they are unreachable, and this set exists so that the
+     * reason is explicit rather than accidental.
+     *
+     * <p>Note this is NOT the pre-VB-8H "the execution engine does this". No such
+     * engine path exists and none should: multiple executions may run for one
+     * campaign, so no single execution can authoritatively set campaign status.
+     * Campaign progress is read from its executions, not encoded here.
+     */
+    private static final Set<CampaignStatus> RESERVED_STATES = Set.of(
+        CampaignStatus.RUNNING, CampaignStatus.COMPLETED, CampaignStatus.FAILED);
+
 
     /** Explicit sort allowlist; anything else falls back to the default sort. */
     private static final List<String> SORTABLE_FIELDS =
@@ -282,9 +327,11 @@ public class CampaignService {
             throw new ConflictException(
                 "Illegal campaign lifecycle transition: " + from + " -> " + target + ".");
         }
-        if (SYSTEM_DRIVEN_TRANSITIONS.contains(key(from, target))) {
+        if (RESERVED_STATES.contains(target)) {
             throw new ConflictException(
-                "Transition " + from + " -> " + target + " is performed by the execution engine.");
+                "Campaign status " + target + " is reserved: it describes execution "
+                    + "outcomes, not campaign configuration. Read it from the campaign's "
+                    + "executions instead.");
         }
         if (from == CampaignStatus.DRAFT && target == CampaignStatus.SCHEDULED) {
             validateActivation(entity);
@@ -535,21 +582,18 @@ public class CampaignService {
         if (schedule == null) {
             return;
         }
-        validateScheduleWindow(schedule.startDate(), schedule.endDate(),
+        validateScheduleWindow(schedule.startDate(),
             schedule.startTime(), schedule.endTime(), schedule.timezone());
     }
 
     /** Shared by the DTO path and the entity-based activation gate. */
     private void validateScheduleWindow(
-        LocalDate start, LocalDate end, LocalTime startTime, LocalTime endTime, String timezone
+        LocalDate start, LocalTime startTime, LocalTime endTime, String timezone
     ) {
-        if (start != null && end != null && end.isBefore(start)) {
-            throw business("Schedule end date must not be before its start date.");
-        }
         if (startTime != null && endTime != null && !endTime.isAfter(startTime)) {
             throw business("Daily end time must be after the daily start time.");
         }
-        boolean windowConfigured = start != null || end != null || startTime != null || endTime != null;
+        boolean windowConfigured = start != null || startTime != null || endTime != null;
         if (windowConfigured && (timezone == null || timezone.isBlank())) {
             throw business("Timezone is required when a schedule window is configured.");
         }
@@ -592,7 +636,7 @@ public class CampaignService {
         validateTypeConfig(entity.getCampaignType(), entity.getTypeConfig());
         validateAgentQueueReference(
             entity.getCampaignType(), entity.getTypeConfig(), entity.getTenantId());
-        validateScheduleWindow(schedule.getStartDate(), schedule.getEndDate(),
+        validateScheduleWindow(schedule.getStartDate(),
             schedule.getStartTime(), schedule.getEndTime(), schedule.getTimezone());
         validateRetrySpec(entity.getRetryPolicy());
     }
@@ -764,10 +808,6 @@ public class CampaignService {
         } catch (IllegalArgumentException ex) {
             throw business("Unknown runMode filter: " + runModeStr);
         }
-    }
-
-    private static String key(CampaignStatus from, CampaignStatus to) {
-        return from.name() + ">" + to.name();
     }
 
     private <E extends Enum<E>> E parseEnum(String value, E[] values) {

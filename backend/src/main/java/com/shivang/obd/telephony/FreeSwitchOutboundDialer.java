@@ -65,10 +65,20 @@ public class FreeSwitchOutboundDialer implements OutboundDialer {
             // via FreeSWITCH's origination_uuid channel variable and is the
             // CallAttempt's own id. This makes the provider call identity
             // deterministic BEFORE the call is placed, so every subsequent ESL
-            // event correlates by Call-UUID with no race, no polling and no
-            // extra table. Pre-VB-6E this returned a bgapi Job-UUID, which is a
-            // background-task identifier and NOT a channel identity, so nothing
-            // could ever correlate.
+            // event correlates by channel identity with no race, no polling and
+            // no extra table. Pre-VB-6E this returned a bgapi Job-UUID, which is
+            // a background-task identifier and NOT a channel identity, so
+            // nothing could ever correlate.
+            //
+            // PHASE D CORRECTION: this comment previously said events correlate
+            // by "Call-UUID". FreeSWITCH emits no such header - it was measured
+            // absent from every event type consumed by the platform. Correlation
+            // resolves through EslEvent.CHANNEL_IDENTITY_HEADERS, in order:
+            // Channel-Call-UUID, then Unique-ID, then Call-UUID purely for
+            // compatibility. The pinned-UUID design below is unchanged and
+            // still correct; only the name of the header was wrong, and leaving
+            // it would have reintroduced the exact misconception Phase D
+            // removed. See docs/freeswitch/05-ESL.md 12.5.
             String channelUuid = request.callAttemptId() == null
                     ? null
                     : request.callAttemptId().toString();

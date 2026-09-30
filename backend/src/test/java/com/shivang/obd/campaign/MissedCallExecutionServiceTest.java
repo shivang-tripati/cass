@@ -110,7 +110,7 @@ class MissedCallExecutionServiceTest {
                         CAMPAIGN_ID, TENANT_A,
                         new CampaignConfigurationSnapshot(
                                 type, null, null, null, null, null,
-                                null, null, null, null, null, null, null,
+                                null, null, null, null, null, null,
                                 0, null, RetryStrategy.FIXED, null, null, null,
                                 json(typeConfigJson), false, null),
                         Instant.now()));

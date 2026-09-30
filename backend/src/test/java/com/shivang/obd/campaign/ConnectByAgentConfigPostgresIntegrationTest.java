@@ -293,6 +293,8 @@ class ConnectByAgentConfigPostgresIntegrationTest {
         assertThat(config.agentConnectRequest().effectiveRingSeconds()).isEqualTo(30);
 
         // A later execution picks up the edit, in its own snapshot.
+        settle(e1.data().id());
+
         var e2 = transactionTemplate.execute(tx ->
                 executionService.execute(campaignId, new ExecuteCampaignRequest(null)));
         assertThat(e2.data().configurationSnapshotId()).isNotEqualTo(snapshotIdV1);
@@ -310,6 +312,24 @@ class ConnectByAgentConfigPostgresIntegrationTest {
         assertThat(s1.getConfiguration().getTypeConfig()
                 .get(ConnectByAgentCampaignConfig.KEY).get("queueId").asText())
                 .isEqualTo(queueV1.toString());
+    }
+
+    /**
+     * VB-8J: settles an execution so a later one may be created.
+     *
+     * The product allows one in-flight execution per campaign, because two
+     * concurrent executions would materialise an attempt for every contact in
+     * the audience twice. Snapshot immutability does not depend on the pair
+     * being concurrent: what it asserts is that the frozen row is never
+     * rewritten, which a sequential pair establishes just as well.
+     */
+    private void settle(UUID executionId) {
+        transactionTemplate.executeWithoutResult(tx -> {
+            CampaignExecution e = executionRepository
+                    .findByIdAndDeletedAtIsNull(executionId).orElseThrow();
+            e.setStatus(CampaignExecutionStatus.COMPLETED);
+            executionRepository.saveAndFlush(e);
+        });
     }
 
     @Test
@@ -542,7 +562,7 @@ class ConnectByAgentConfigPostgresIntegrationTest {
         // blank zone, with no JVM/UTC fallback. Readiness therefore requires a
         // timezone for every campaign. A windowless schedule is the minimal way
         // to satisfy it and keeps these tests scoped to their own dimension.
-        c.setSchedule(new ScheduleSpec(null, null, null, null, "Asia/Kolkata", null, null));
+        c.setSchedule(new ScheduleSpec(null, null, null, "Asia/Kolkata", null, null));
             c.setRetryPolicy(new RetryPolicySpec(0, null, RetryStrategy.FIXED));
             c.setTypeConfig(connectByAgentJson(queueId, ringSeconds));
             return campaignRepository.saveAndFlush(c).getId();

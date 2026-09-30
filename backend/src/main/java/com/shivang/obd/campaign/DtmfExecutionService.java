@@ -253,10 +253,19 @@ public class DtmfExecutionService implements PlaybackTrigger, DtmfCollectorTrigg
                     attempt.getCampaignId(), attempt.getTenantId());
             return;
         }
-        CampaignEntity liveCampaign = campaignOpt.get();
+        // VB-8B (F-02): the campaign row is loaded ONLY to fail closed when it
+        // has gone missing, and to keep the lookup tenant-scoped. It is
+        // deliberately not bound to a variable: there was a `liveCampaign`
+        // binding here that was assigned and never read, which invited exactly
+        // the wrong conclusion - that DTMF configuration could come from the
+        // campaign. It cannot. Everything below comes from the snapshot.
 
-        // VB-6A: configuration comes from the execution's immutable snapshot
-        // (falling back to live config only for legacy executions).
+        // VB-6A: configuration comes from the execution's immutable snapshot.
+        // VB-8B correction to the comment that used to stand here: it claimed a
+        // "fallback to live config only for legacy executions". There is no such
+        // fallback and there must never be one. A missing snapshot is a
+        // deterministic integrity failure (ExecutionConfigurationMissingException),
+        // not a reason to read mutable campaign state.
         CampaignRuntimeConfigResolver.CampaignRuntimeConfig config =
                 resolveExecutionConfig(attempt);
         if (config == null) {

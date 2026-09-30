@@ -170,7 +170,7 @@ class DtmfExecutionServiceTest {
                 new CampaignConfigurationSnapshot(
                         CampaignType.DTMF, null, null, ContentMode.AUDIO,
                         audioAssetId, null,
-                        null, null, null, null, null, null, null,
+                        null, null, null, null, null, null,
                         0, null, RetryStrategy.FIXED,
                         MAPPER.readTree(
                                 "{\"dtmf\": {\"expected\": \"1\", \"timeoutSecs\": 10}}"),
@@ -204,7 +204,7 @@ class DtmfExecutionServiceTest {
                     new CampaignConfigurationSnapshot(
                             type, null, null, ContentMode.AUDIO,
                             ASSET_ID, null,
-                            null, null, null, null, null, null, null,
+                            null, null, null, null, null, null,
                             0, null, RetryStrategy.FIXED,
                             typeConfig, false, null),
                     Instant.now()));

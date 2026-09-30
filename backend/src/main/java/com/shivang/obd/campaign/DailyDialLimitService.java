@@ -300,6 +300,78 @@ public class DailyDialLimitService {
     }
 
     /**
+     * VB-8G — reconciles a provider acceptance that {@link #confirmAccepted}
+     * could not, because the transaction holding its reservation rolled back
+     * after FreeSWITCH had already accepted the call.
+     *
+     * <p><b>Not an admission.</b> The call has already happened. This method
+     * therefore never calls {@link #admit} and never grants or returns a hold:
+     * there is no reservation lifecycle here, only an accounting fact to
+     * record. {@code reserved_count} is left untouched, so it cannot be driven
+     * negative by the {@code ck_vbdu_reserved_non_negative} check.
+     *
+     * <p><b>Never refuses.</b> A recovered acceptance is factual. If the bucket
+     * is already at or over the limit, the usage is still recorded, and the
+     * bucket is allowed to exceed the limit; subsequent admissions observe the
+     * raised {@code used_count} and stop on their own. Throwing a
+     * "daily limit reached" admission error here would erase a call that really
+     * was placed and would let more dials follow.
+     *
+     * <h2>Idempotency and ordering</h2>
+     *
+     * <p>The {@code UNIQUE (call_attempt_id)} ledger row is inserted
+     * <b>first</b>, and the bucket is incremented only by the caller that won
+     * that insert. That makes exactly-once a physical database property rather
+     * than a read-then-write race: two workers reconciling the same attempt
+     * concurrently produce one insert, one increment, and one counted call.
+     * A redelivered event finds the row present and returns without counting.
+     *
+     * <p>Both writes run in the caller's transaction, so the ledger row and the
+     * bucket movement commit together or not at all — the bucket can never
+     * disagree with the ledger it summarises.
+     *
+     * <p>The bucket key is supplied by the caller and must be derived from
+     * persisted application context (the attempt's own tenant, contact and
+     * actual route DID, and the frozen snapshot's timezone) — never from a
+     * FreeSWITCH channel, a phone number or a caller-supplied string.
+     *
+     * @return {@code true} when this call recorded the usage, {@code false}
+     *         when it had already been reconciled
+     */
+    public boolean reconcileRecoveredAcceptance(UUID tenantId, UUID callAttemptId,
+                                                UUID contactId, UUID actualOutboundDidId,
+                                                LocalDate usageDate, String providerCallId) {
+        // Fail closed rather than fabricate usage if the accounting key is
+        // incomplete: without all four components there is no bucket to
+        // reconcile into, and inventing one would scatter usage.
+        if (tenantId == null || callAttemptId == null || contactId == null
+                || actualOutboundDidId == null || usageDate == null) {
+            log.warn("Recovered acceptance not reconciled for attempt {}: incomplete "
+                    + "VB-6C bucket key (tenant={}, contact={}, did={}, date={})",
+                    callAttemptId, tenantId, contactId, actualOutboundDidId, usageDate);
+            return false;
+        }
+        // The hold that this acceptance would have converted was rolled back,
+        // so the bucket row itself may not exist either. Idempotent, and never
+        // raises, so it is safe ahead of the gate.
+        ensureBucketRow(tenantId, contactId, actualOutboundDidId, usageDate);
+
+        int inserted = entryRepository.insertIfAbsent(tenantId, callAttemptId, contactId,
+                actualOutboundDidId, usageDate, providerCallId);
+        if (inserted == 0) {
+            log.info("Recovered acceptance for attempt {} already reconciled; "
+                    + "duplicate event counted nothing", callAttemptId);
+            return false;
+        }
+
+        usageRepository.countRecoveredUsed(tenantId, contactId, actualOutboundDidId, usageDate);
+        log.info("Reconciled recovered provider acceptance for attempt {} into bucket "
+                        + "(tenant={}, contact={}, did={}, date={})",
+                callAttemptId, tenantId, contactId, actualOutboundDidId, usageDate);
+        return true;
+    }
+
+    /**
      * Returns a hold after a pre-acceptance failure (the dial never
      * reached the provider). Idempotent — releasing with nothing held is
      * a no-op. Never called after {@link #confirmAccepted}: a consumed

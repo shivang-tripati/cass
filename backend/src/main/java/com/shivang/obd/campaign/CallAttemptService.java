@@ -13,7 +13,7 @@ import com.shivang.obd.common.exception.ConflictException;
 import com.shivang.obd.common.exception.ResourceNotFoundException;
 import com.shivang.obd.common.lifecycle.LifecycleStatus;
 import com.shivang.obd.contact.ContactRepository;
-import com.shivang.obd.contact.ContactGroupRepository;
+import com.shivang.obd.contact.ContactGroupMemberRepository;
 import com.shivang.obd.security.CurrentUserProvider;
 import com.shivang.obd.tenant.TenantEntity;
 import com.shivang.obd.tenant.TenantRepository;
@@ -37,13 +37,30 @@ public class CallAttemptService {
 
     private static final String CAP_EXECUTE = "CAMPAIGN_EXECUTE";
 
-    private final CampaignRepository campaignRepository;
+    /**
+     * VB-8B: {@code CampaignRepository} was removed from this service on purpose.
+     * It was injected only to load the live campaign for an existence check that
+     * the campaign-execution identifier comparison already covers, and its
+     * presence invited exactly the wrong reading - that this service could take
+     * execution configuration from the campaign row. It cannot and must not:
+     * after snapshot creation the campaign is not a configuration authority.
+     */
     private final CampaignExecutionRepository executionRepository;
     private final CallAttemptRepository attemptRepository;
     private final AuthorizationService authorizationService;
     private final CurrentUserProvider currentUserProvider;
     private final ContactRepository contactRepository;
-    private final ContactGroupRepository contactGroupRepository;
+    private final ContactGroupMemberRepository memberRepository;
+    /**
+     * VB-8B: the frozen-configuration boundary. Every execution-affecting value
+     * this service writes comes from here, never from {@link CampaignEntity}.
+     */
+    private final CampaignRuntimeConfigResolver runtimeConfigResolver;
+    /**
+     * VB-8B: the one canonical calling-window calculation, shared with the
+     * scheduler so a manual attempt cannot bypass it.
+     */
+    private final ExecutionScheduleCalculator scheduleCalculator;
     /** Canonical campaign-resource validation boundary (VB-5E). */
     private final CampaignResourceValidationService resourceValidator;
     /** Reseller hierarchy resolution for the attempt boundary (VB-5F). */
@@ -51,6 +68,35 @@ public class CallAttemptService {
 
     /**
      * Creates a call attempt for an existing execution.
+     *
+     * <h2>VB-8B: what the caller may and may not decide</h2>
+     *
+     * <p>The request identifies <em>the operation</em> - which execution, which
+     * contact, and at which attempt number. It may never redefine <em>the
+     * execution's configuration</em>. Every execution-affecting value on the
+     * created attempt is therefore taken from, or checked against, the
+     * execution's frozen {@link CampaignConfigurationSnapshot}:
+     *
+     * <ul>
+     *   <li>{@code didId} - derived from the snapshot. A supplied value that
+     *       disagrees is rejected rather than silently discarded, because there is
+     *       exactly one correct DID and a mismatch is always a client error.</li>
+     *   <li>{@code scheduledAt} - derived from the snapshot's frozen schedule via
+     *       the canonical {@link ExecutionScheduleCalculator}. The request field is
+     *       accepted for shape compatibility and is <b>not authoritative</b>;
+     *       supplying it cannot place a call outside the campaign's calling hours,
+     *       because supplying it changes nothing.</li>
+     *   <li>{@code attemptNumber} - bounded by the snapshot's frozen retry policy
+     *       through {@link RetryPolicySpec#maxPermittedAttemptNumber()}.</li>
+     *   <li>Audience - the contact must be a live member of the snapshot's frozen
+     *       contact group, exactly as scheduler-created attempts require.</li>
+     *   <li>Runnability - a terminal execution cannot be resurrected.</li>
+     * </ul>
+     *
+     * <p>There is deliberately no "snapshot value if present, else the live
+     * campaign" branch anywhere in this method, and the live
+     * {@link CampaignEntity} is not loaded at all: the campaign row is not a
+     * configuration authority once an execution exists.
      *
      * @param campaignId the campaign ID
      * @param executionId the execution ID
@@ -72,23 +118,52 @@ public class CallAttemptService {
 
         authorizationService.requireCapability(userId, CAP_EXECUTE, AccessCheck.forTenant(tenantId));
 
-        // Validate contact exists and belongs to the campaign's contact group
+        // VB-8B: the execution must still be runnable. A terminal execution is
+        // finished business; creating a new attempt for it would resurrect work
+        // the engine has already closed out.
+        assertExecutionRunnable(execution);
+
+        // VB-8B: everything below is sourced from the immutable snapshot, never
+        // from the live campaign. There is deliberately no "snapshot if present,
+        // else the live campaign" branch anywhere in this method.
+        CampaignRuntimeConfigResolver.CampaignRuntimeConfig config =
+                runtimeConfigResolver.resolve(execution);
+
+        // VB-6B.1: contact identity is tenant-scoped (no group predicate); the
+        // lookup is tenant-cloaked so a foreign/nonexistent contact is
+        // indistinguishable. Audience membership is a separate check below.
         UUID contactId = request.contactId();
-        CampaignEntity campaign = campaignRepository.findByIdAndTenantIdAndDeletedAtIsNull(campaignId, tenantId)
-                .orElseThrow(() -> new BusinessException(
-                        CommonErrorCode.VALIDATION_ERROR,
-                        "Campaign not found"));
-        // VB-6B.1: contact identity is tenant-scoped (no group predicate);
-        // the lookup is tenant-cloaked so a foreign/nonexistent contact is
-        // indistinguishable.
         var contact = contactRepository.findByIdAndTenantIdAndDeletedAtIsNull(contactId, tenantId)
                 .orElseThrow(() -> new BusinessException(
                         CommonErrorCode.VALIDATION_ERROR,
                         "Contact does not exist or is not available"));
 
-        // Validate DID exists, is live, ACTIVE and ASSIGNED to the campaign tenant
-        // (canonical resource semantics via the VB-5E validation boundary).
-        UUID didId = request.didId();
+        // VB-8B: audience. The snapshot's group is this execution's audience, and
+        // membership stays live (VB-6B.1 Model A). Enforcing it here means a
+        // manual attempt is never more privileged than a scheduler-created one:
+        // the dial-time check is skipped for whitelist-enforced campaigns, so
+        // without this a manual attempt could reach any tenant contact.
+        assertWithinFrozenAudience(config, contactId);
+
+        // VB-8B: the DID belongs to the execution. Derive it from the snapshot,
+        // and reject a client value that disagrees rather than silently
+        // overwriting it - there is exactly one correct DID, so a mismatch is
+        // always a client error and never an ambiguity.
+        UUID didId = config.didId();
+        if (didId == null) {
+            throw new BusinessException(
+                    CommonErrorCode.VALIDATION_ERROR,
+                    "Execution has no DID in its frozen configuration");
+        }
+        if (request.didId() != null && !request.didId().equals(didId)) {
+            throw new ConflictException(
+                    "didId is defined by the execution's frozen configuration and cannot be "
+                            + "overridden (requested: " + request.didId() + ", execution: " + didId + ").");
+        }
+
+        // DID validity (ownership/ACTIVE/ASSIGNED) stays dynamic per the VB-6A
+        // snapshot-vs-resource rule: the snapshot pins what was requested, not
+        // whether the resource is still usable.
         var didResult = resourceValidator.validateDid(didId, tenantId);
         if (!didResult.usable()) {
             throw new BusinessException(
@@ -96,12 +171,22 @@ public class CallAttemptService {
                     "DID does not exist or is not available for this tenant");
         }
 
-        // Validate attempt number
+        // VB-8B: attempt numbering is retry-governed and the frozen policy is
+        // the only authority. maxRetries counts retries, so the highest
+        // permitted attempt number is 1 + maxRetries.
         Integer attemptNumber = request.attemptNumber();
         if (attemptNumber == null || attemptNumber <= 0) {
             throw new BusinessException(
                     CommonErrorCode.VALIDATION_ERROR,
                     "Attempt number must be positive");
+        }
+        int maxPermitted = config.retryPolicy() == null
+                ? 1
+                : config.retryPolicy().maxPermittedAttemptNumber();
+        if (attemptNumber > maxPermitted) {
+            throw new ConflictException(
+                    "Attempt number " + attemptNumber + " exceeds this execution's frozen retry "
+                            + "policy, which permits at most " + maxPermitted + ".");
         }
 
         // Check for duplicate attempt
@@ -111,6 +196,14 @@ public class CallAttemptService {
                     "Call attempt already exists for this execution, contact, and attempt number");
         }
 
+        // VB-8B: the dispatch time is execution-owned. Derived from the frozen
+        // schedule through the one canonical window calculation, so a manual
+        // attempt cannot land outside the campaign's calling hours. The request's
+        // scheduledAt is accepted for shape compatibility and is never
+        // authoritative - supplying it changes nothing about when we dial.
+        Instant scheduledAt = scheduleCalculator
+                .calculateNextScheduledAt(config.schedule(), Instant.now());
+
         // Create attempt
         CallAttempt attempt = new CallAttempt();
         attempt.setExecutionId(executionId);
@@ -119,10 +212,56 @@ public class CallAttemptService {
         attempt.setContactId(contactId);
         attempt.setDidId(didId);
         attempt.setAttemptNumber(attemptNumber);
-        attempt.setScheduledAt(request.scheduledAt() != null ? request.scheduledAt() : Instant.now());
+        attempt.setScheduledAt(scheduledAt);
+        attempt.setStatus(CallAttemptStatus.QUEUED);
 
         CallAttempt saved = attemptRepository.save(attempt);
         return ResponseFactory.created(mapToResponse(saved));
+    }
+
+    /**
+     * VB-8B: execution statuses a manual attempt may be created for.
+     *
+     * <p>VB-8D: the set now lives on {@link CampaignExecutionStatus}, which is
+     * the single authority for the execution lifecycle. The scheduler's dial
+     * path asks the same question before dispatching, so keeping a private copy
+     * here would have been exactly the drift this avoids.
+     */
+    private static final Set<CampaignExecutionStatus> ATTEMPT_CREATABLE_EXECUTION_STATUSES =
+            CampaignExecutionStatus.DISPATCHABLE;
+
+    /** VB-8B: refuses a manual attempt against a terminal execution. */
+    private void assertExecutionRunnable(CampaignExecution execution) {
+        if (ATTEMPT_CREATABLE_EXECUTION_STATUSES.contains(execution.getStatus())) {
+            return;
+        }
+        throw new ConflictException(
+                "A call attempt cannot be created for an execution in status "
+                        + execution.getStatus() + "; only "
+                        + ATTEMPT_CREATABLE_EXECUTION_STATUSES + " accept one.");
+    }
+
+    /**
+     * VB-8B: the contact must belong to the execution's frozen audience.
+     *
+     * <p>Uses the snapshot's {@code contactGroupId} - the group this execution was
+     * created for - through the existing membership bridge. Membership itself
+     * stays live, matching VB-6B.1 Model A: the frozen configuration decides
+     * <em>which</em> group, live membership decides <em>who</em> is in it.
+     */
+    private void assertWithinFrozenAudience(
+            CampaignRuntimeConfigResolver.CampaignRuntimeConfig config, UUID contactId) {
+        UUID frozenGroupId = config.contactGroupId();
+        if (frozenGroupId == null) {
+            throw new BusinessException(
+                    CommonErrorCode.VALIDATION_ERROR,
+                    "Execution has no contact group in its frozen configuration");
+        }
+        if (!memberRepository.existsByContactGroupIdAndContactId(frozenGroupId, contactId)) {
+            throw new BusinessException(
+                    CommonErrorCode.VALIDATION_ERROR,
+                    "Contact is not a member of the execution's frozen contact group");
+        }
     }
 
     /**

@@ -163,9 +163,17 @@ public class StaleCallReconciler {
         Instant now = Instant.now();
         int overdue = terminateOverdueCalls(now);
         int stranded = finalizeStrandedAttempts(now);
-        if (overdue > 0 || stranded > 0) {
+        // VB-8E: attempts that were claimed but never produced a session. Before
+        // VB-8D these could not exist (the attempt only became IN_PROGRESS inside
+        // the same transaction that created the session); the claim is now its
+        // own committed transaction, so a crash between the two leaves an
+        // attempt IN_PROGRESS with no session at all - invisible to the two
+        // sweeps above and therefore stuck forever.
+        int orphaned = finalizeOrphanedClaims(now);
+        if (overdue > 0 || stranded > 0 || orphaned > 0) {
             log.warn("VB-6E stale-call reconciliation: {} overdue call(s) terminated, "
-                    + "{} stranded attempt(s) finalized", overdue, stranded);
+                    + "{} stranded attempt(s) finalized, {} orphaned claim(s) settled",
+                    overdue, stranded, orphaned);
         }
     }
 
@@ -182,6 +190,133 @@ public class StaleCallReconciler {
             }
         }
         return handled;
+    }
+
+    /**
+     * VB-8E recovery: settle attempts that were claimed but never produced a
+     * call session.
+     *
+     * <p>Since VB-8D the dispatch claim is its own committed transaction, so an
+     * attempt moves {@code QUEUED -> IN_PROGRESS} <em>before</em> the transaction
+     * that creates its {@code CallSession}. A crash in that window leaves an
+     * attempt that is {@code IN_PROGRESS} with no session row - which the
+     * stranded-session sweep above, which is driven by {@code call_sessions},
+     * can never see. Such an attempt is also not {@code QUEUED}, so the dial
+     * step will not pick it up again (correctly, to prevent a duplicate call),
+     * and {@code reconcileExecution} will never settle the execution because one
+     * of its attempts is not terminal. The attempt, and the execution with it,
+     * would otherwise wedge permanently.
+     */
+    private int finalizeOrphanedClaims(Instant now) {
+        Instant cutoff = now.minus(STALE_ATTEMPT_THRESHOLD);
+        List<UUID> orphans = orphanedClaimedAttempts(cutoff);
+        int handled = 0;
+        for (UUID attemptId : orphans) {
+            if (finalizeOrphanedClaim(attemptId)) {
+                handled++;
+            }
+        }
+        return handled;
+    }
+
+    /**
+     * Stale {@code IN_PROGRESS} attempts that have no session at all.
+     *
+     * <p>Deliberately a {@code NOT EXISTS} on the session rather than a join, so
+     * the population can never overlap the stranded-session sweep: an attempt
+     * with a session is that sweep's business, one without is this one's.
+     *
+     * <p>Bounded and ordered exactly like the existing sweeps, and re-checks
+     * staleness inside the finalising transaction so a long pass cannot settle an
+     * attempt that has just been claimed.
+     */
+    @Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
+    @SuppressWarnings("unchecked")
+    List<UUID> orphanedClaimedAttempts(Instant cutoff) {
+        return entityManager.createNativeQuery("""
+                SELECT a.id FROM call_attempts a
+                WHERE a.deleted_at IS NULL
+                  AND a.status = 'IN_PROGRESS'
+                  AND a.started_at IS NOT NULL
+                  AND a.started_at <= :cutoff
+                  AND NOT EXISTS (
+                      SELECT 1 FROM call_sessions s
+                      WHERE s.call_attempt_id = a.id
+                        AND s.deleted_at IS NULL)
+                ORDER BY a.started_at
+                LIMIT :batchSize
+                """)
+                .setParameter("cutoff", cutoff)
+                .setParameter("batchSize", MAX_BATCH)
+                .getResultList();
+    }
+
+    /**
+     * VB-8E: settles one claimed-but-unsessioned attempt.
+     *
+     * <h2>Why CANCELLED and not FAILED</h2>
+     *
+     * <p>This attempt's external outcome is genuinely <b>unknown</b>. It is
+     * equally consistent with "the JVM died before the dialer was called" and
+     * with "FreeSWITCH accepted the call and the JVM died before the provider
+     * call id could be persisted". PostgreSQL and FreeSWITCH are not one atomic
+     * transaction and this method does not pretend otherwise.
+     *
+     * <p>So it is recorded as {@code CANCELLED}, which is terminal and which the
+     * retry step never selects. Turning an unknown external outcome into
+     * {@code FAILED} would hand it to {@link RetryPolicyService}, and a retry
+     * would place a <em>second real call</em> to a contact who may already be
+     * receiving the first. Under-dialing is the recoverable direction;
+     * double-dialing is not.
+     *
+     * <p>What is deliberately <em>not</em> done: the attempt is not requeued,
+     * because a requeue would dispatch it again for the same reason. What this
+     * method restores is convergence - the attempt is settled, so
+     * {@code reconcileExecution} can finish the execution instead of waiting
+     * forever.
+     *
+     * <p>If a call really was placed, it remains live in FreeSWITCH and ends on
+     * its own timeout; the platform simply does not learn the outcome. The
+     * channel cannot be correlated afterwards because {@code providerCallId} was
+     * never persisted. Closing that accounting gap needs an ESL probe for the
+     * deterministic {@code origination_uuid} (which equals this attempt's id) and
+     * belongs in its own phase, not here.
+     *
+     * <p>No daily safety is consumed or released: the VB-6C reservation and the
+     * VB-6D.3 attempt both live in the dispatch transaction, which rolled back
+     * with the crash, so there is nothing to give back.
+     */
+    @Transactional
+    public boolean finalizeOrphanedClaim(UUID attemptId) {
+        var attempt = attemptRepository.findByIdAndDeletedAtIsNull(attemptId).orElse(null);
+        if (attempt == null
+                || attempt.getStatus() != CallAttemptStatus.IN_PROGRESS
+                || attempt.getStartedAt() == null
+                || attempt.getStartedAt().isAfter(
+                        Instant.now().minus(STALE_ATTEMPT_THRESHOLD))) {
+            return false;
+        }
+        // Re-checked here, in the finalising transaction: a session appearing
+        // between the read pass and this write means the dispatch transaction
+        // did complete after all, and that attempt is the stranded-session
+        // sweep's business, not ours.
+        if (!callSessionRepository
+                .findByCallAttemptIdAndDeletedAtIsNull(attemptId).isEmpty()) {
+            return false;
+        }
+
+        attempt.setStatus(CallAttemptStatus.CANCELLED);
+        attempt.setFailureCode("CLAIMED_NOT_DISPATCHED");
+        attempt.setFailureReason("Attempt was claimed but produced no call session within "
+                + STALE_ATTEMPT_THRESHOLD.toSeconds()
+                + "s; external outcome unknown, so it is not retried");
+        attempt.setCompletedAt(Instant.now());
+        attemptRepository.save(attempt);
+
+        log.info("Settled orphaned claim {} (execution {}, contact {}) - claimed but no session; "
+                + "external outcome unknown, not retried",
+                attemptId, attempt.getExecutionId(), attempt.getContactId());
+        return true;
     }
 
     /**
@@ -231,12 +366,28 @@ public class StaleCallReconciler {
      * Non-terminal sessions of attempts that have been dispatched longer ago
      * than the stale threshold and never reached a terminal state — the shape
      * left behind by a lost hangup event.
+     *
+     * <p>VB-8E: this was {@code SELECT DISTINCT s.id ... ORDER BY a.started_at},
+     * which PostgreSQL rejects outright — for {@code DISTINCT} every ordering
+     * expression must appear in the select list, and {@code a.started_at} did
+     * not. The failure was silent in the only sense that it had never been
+     * observed: the sweep had no test that put a stranded session in front of
+     * it, so the entire stale-attempt recovery path threw on its first real
+     * match, and because the exception escaped {@link #reconcile()} it also
+     * skipped every later sweep in the same pass. One row of dead recovery
+     * logic that had never run.
+     *
+     * <p>{@code GROUP BY s.id} expresses the same intent legally: a session
+     * joins to at most one attempt, so grouping by the primary key yields
+     * exactly the rows {@code DISTINCT} was asking for, and the aggregate in
+     * the ordering keeps the oldest-dispatch-first behaviour the batch limit
+     * depends on.
      */
     @Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
     @SuppressWarnings("unchecked")
     List<UUID> strandedAttemptSessions(Instant cutoff) {
         return entityManager.createNativeQuery("""
-                SELECT DISTINCT s.id FROM call_sessions s
+                SELECT s.id FROM call_sessions s
                 JOIN call_attempts a ON a.id = s.call_attempt_id
                 WHERE s.deleted_at IS NULL
                   AND a.deleted_at IS NULL
@@ -246,7 +397,8 @@ public class StaleCallReconciler {
                   AND a.started_at <= :cutoff
                   AND s.status IN ('INITIATED','DIALING','RINGING','ANSWERED',
                                    'PLAYING','PLAYBACK_COMPLETED')
-                ORDER BY a.started_at
+                GROUP BY s.id
+                ORDER BY min(a.started_at)
                 LIMIT :batchSize
                 """)
                 .setParameter("cutoff", cutoff)

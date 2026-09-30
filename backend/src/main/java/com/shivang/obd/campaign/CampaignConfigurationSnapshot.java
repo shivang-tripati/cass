@@ -31,25 +31,46 @@ import tools.jackson.databind.JsonNode;
  * <ul>
  *   <li>SNAPSHOT_REQUIRED: type, audience/group reference, DID reference,
  *       content mode and asset/template references, schedule window, retry
- *       policy, typeConfig, whitelist enforcement flag</li>
- *   <li>Excluded: {@code integrationConfig} - <b>still excluded in VB-7C.2,</b> and
- *       the exclusion is deliberate but time-limited. Nothing consumes it: the typed
- *       {@code CampaignIntegrationConfig} has no runtime reader, because webhook
- *       delivery, signing and reporting are all unimplemented. Freezing it would
- *       record an execution's intent to deliver web-hooks - semantics no execution
- *       currently has.
- *       <p><b>The rule for the future:</b> the moment the first consumer of this
- *       configuration appears, it MUST be added here <em>in the same phase</em>.
- *       Shipping a consumer while leaving it excluded would let an operator edit a
- *       campaign's endpoint and silently change the behaviour of an already-running
- *       execution - precisely the failure the immutable snapshot exists to prevent.
- *       Adding it needs only an additive column on this embeddable and the matching
- *       column in {@code campaign_execution_configurations}, following the V49/V52
- *       precedent; no versioning, history table or compatibility shim.</li>
- *       snapshotting it would invent execution semantics it does not have</li>
+ *       policy, typeConfig, whitelist enforcement flag, and - since VB-7C.3 -
+ *       {@code integrationConfig}</li>
  * </ul>
  * Resource <em>validity</em> of the referenced DID/audio/TTS is never frozen:
  * every runtime check stays dynamic (VB-6A snapshot-vs-resource rule).
+ *
+ * <h2>The governing rule</h2>
+ *
+ * <p><b>Any campaign configuration consumed by execution-time runtime behaviour
+ * MUST be captured in this snapshot in the same phase that introduces the first
+ * runtime consumer.</b> This is a rule, not a caution. Shipping a consumer while
+ * leaving its configuration mutable would let an operator edit a campaign's
+ * endpoint or privacy level and silently change what an already-running
+ * execution does - precisely the failure the immutable snapshot exists to
+ * prevent.
+ *
+ * <p>It is enforced structurally rather than by convention. A runtime component
+ * cannot obtain execution configuration except through
+ * {@code CampaignRuntimeConfigResolver.CampaignRuntimeConfig}, which is built
+ * solely from a frozen snapshot row; no API on this class, the resolver, or
+ * their records returns a {@link CampaignEntity}. Reading the mutable campaign
+ * from an execution-time path is therefore not a shortcut the API offers - it
+ * requires reaching past the resolver to the repository.
+ *
+ * <h3>History of this boundary</h3>
+ *
+ * <p>VB-7C.2 introduced {@code integrationConfig} (webhook + report privacy)
+ * with no runtime consumer and therefore excluded it from the snapshot,
+ * deferring the decision to the first consumer under the rule above. That was
+ * correct at the time: webhook delivery, signing and reporting were all
+ * unimplemented, so freezing it would have recorded an execution's intent to
+ * deliver webhooks - semantics no execution then had.
+ *
+ * <p>VB-7C.3 closed the boundary early and deliberately, before VB-8A execution
+ * work begins, so the first delivery or reporting phase inherits an already-safe
+ * snapshot instead of having to remember to extend it under deadline. Storage
+ * followed the existing precedent exactly: one additive nullable column (V55), no
+ * versioning, no history table, no compatibility shim. There is still no webhook
+ * delivery and no reporting runtime - this froze configuration, it did not act
+ * on it.
  */
 @Getter
 @Setter
@@ -86,8 +107,6 @@ public class CampaignConfigurationSnapshot {
     @Column(name = "schedule_start_date")
     private LocalDate scheduleStartDate;
 
-    @Column(name = "schedule_end_date")
-    private LocalDate scheduleEndDate;
 
     @Column(name = "daily_start_time")
     private LocalTime dailyStartTime;
@@ -151,6 +170,46 @@ public class CampaignConfigurationSnapshot {
     @Column(name = "type_config")
     private JsonNode typeConfig;
 
+    /**
+     * VB-7C.3: the campaign's validated integration configuration - webhook and
+     * report privacy - frozen at execution creation as its canonical JSON.
+     *
+     * <p><b>Why it is frozen now, before any consumer exists.</b> VB-7C.2
+     * introduced this configuration with no runtime consumer and deliberately left
+     * it out of the snapshot, recording a rule: the first runtime consumer must
+     * add it in the same phase. VB-7C.3 closes that boundary <em>before</em> any
+     * consumer exists, so the first delivery or reporting phase inherits an
+     * already-safe snapshot rather than having to remember to extend it.
+     *
+     * <p><b>{@code null} is meaningful and is preserved verbatim.</b> It means
+     * "this campaign configured no integration block", which is exactly what
+     * {@code CampaignMapper} writes for a campaign that never configured one.
+     * That is deliberately <em>not</em> the same as an explicit
+     * {@code enabled=false} / {@code FULL} block, and is deliberately not
+     * normalised into one: a runtime consumer must be able to tell "never
+     * configured" from "configured to the default", and collapsing the two here
+     * would erase that difference before anything could observe it. Read this
+     * through {@link #asIntegrationConfig()} rather than casting the node.
+     *
+     * <p>The stored form is the <b>canonical validated</b> serialization produced
+     * by {@code CampaignIntegrationConfig.toJson()}, exactly as
+     * {@link #typeConfig} is - not whatever JSON the client originally sent.
+     *
+     * <p><b>One storage detail worth knowing.</b> "Canonical" describes the bytes
+     * the platform writes; it does not describe the bytes the column returns.
+     * {@code integration_config} is JSONB, and PostgreSQL normalises object key
+     * order on write, so a reloaded node is content-identical to
+     * {@code toJson()} but not text-identical. Array order <em>is</em> preserved,
+     * which is what keeps the normalised, duplicate-free {@code events} list
+     * deterministic. Nothing reads by key position - the typed model reads by key
+     * name - so this is invisible to consumers. It is asserted deliberately in
+     * {@code ExecutionSnapshotIntegrationConfigPostgresIntegrationTest} so the
+     * behaviour is documented rather than discovered later.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "integration_config")
+    private JsonNode integrationConfig;
+
     @Column(name = "call_on_whitelist_numbers", nullable = false)
     private Boolean callOnWhitelistNumbers;
 
@@ -163,6 +222,41 @@ public class CampaignConfigurationSnapshot {
      */
     @Column(name = "daily_dial_limit")
     private Integer dailyDialLimit;
+
+    /**
+     * The VB-7C.2 shape: no integration configuration. Retained so every
+     * existing construction site keeps its exact previous meaning — a snapshot
+     * built this way has {@code integrationConfig == null}, which truthfully
+     * means the campaign configured no integration block.
+     */
+    public CampaignConfigurationSnapshot(
+            CampaignType campaignType,
+            UUID contactGroupId,
+            UUID didId,
+            ContentMode contentMode,
+            UUID audioAssetId,
+            UUID ttsTemplateId,
+            LocalDate scheduleStartDate,
+            LocalTime dailyStartTime,
+            LocalTime dailyEndTime,
+            String timezone,
+            Set<DayOfWeek> allowedDaysOfWeek,
+            UUID holidayCalendarId,
+            Integer retryMaxAttempts,
+            Integer retryIntervalSeconds,
+            RetryStrategy retryStrategy,
+            List<com.shivang.obd.campaign.RetryRule> retryRules,
+            Integer maxDailyAttempts,
+            Integer maxCallDurationSeconds,
+            JsonNode typeConfig,
+            Boolean callOnWhitelistNumbers,
+            Integer dailyDialLimit) {
+        this(campaignType, contactGroupId, didId, contentMode, audioAssetId, ttsTemplateId,
+                scheduleStartDate, dailyStartTime, dailyEndTime, timezone,
+                allowedDaysOfWeek, holidayCalendarId, retryMaxAttempts, retryIntervalSeconds,
+                retryStrategy, retryRules, maxDailyAttempts, maxCallDurationSeconds, typeConfig,
+                null, callOnWhitelistNumbers, dailyDialLimit);
+    }
 
     /**
      * The pre-VB-6D.2 shape: no per-category retry rules. Retained so every
@@ -178,7 +272,6 @@ public class CampaignConfigurationSnapshot {
             UUID audioAssetId,
             UUID ttsTemplateId,
             LocalDate scheduleStartDate,
-            LocalDate scheduleEndDate,
             LocalTime dailyStartTime,
             LocalTime dailyEndTime,
             String timezone,
@@ -191,9 +284,38 @@ public class CampaignConfigurationSnapshot {
             Boolean callOnWhitelistNumbers,
             Integer dailyDialLimit) {
         this(campaignType, contactGroupId, didId, contentMode, audioAssetId, ttsTemplateId,
-                scheduleStartDate, scheduleEndDate, dailyStartTime, dailyEndTime, timezone,
+                scheduleStartDate, dailyStartTime, dailyEndTime, timezone,
                 allowedDaysOfWeek, holidayCalendarId, retryMaxAttempts, retryIntervalSeconds,
                 retryStrategy, null, null, null, typeConfig, callOnWhitelistNumbers, dailyDialLimit);
+    }
+
+    /**
+     * VB-7C.3: the frozen integration configuration, parsed into the validated
+     * typed model.
+     *
+     * <p>Empty when the campaign configured no integration block — the truthful
+     * answer, and deliberately distinct from "configured but disabled". A future
+     * delivery or reporting consumer should read its configuration through here
+     * and nowhere else; that single choke point is what guarantees such a
+     * consumer can never quietly fall back to reading the mutable
+     * {@code Campaign} row.
+     *
+     * @throws IllegalStateException if the stored payload is unreadable, which
+     *         would mean the platform cannot interpret its own frozen snapshot
+     */
+    public java.util.Optional<com.shivang.obd.campaign.config.CampaignIntegrationConfig>
+            asIntegrationConfig() {
+        if (integrationConfig == null || integrationConfig.isNull()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return java.util.Optional.of(
+                    com.shivang.obd.campaign.config.CampaignIntegrationConfig
+                            .fromJson(integrationConfig));
+        } catch (com.shivang.obd.campaign.config.CampaignConfigInvalidException e) {
+            throw new IllegalStateException(
+                    "Frozen integration configuration is not readable: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -202,14 +324,14 @@ public class CampaignConfigurationSnapshot {
      * uniformly.
      */
     public ScheduleSpec scheduleSpec() {
-        if (scheduleStartDate == null && scheduleEndDate == null
+        if (scheduleStartDate == null
                 && dailyStartTime == null && dailyEndTime == null
                 && timezone == null && allowedDaysOfWeek == null
                 && holidayCalendarId == null) {
             return null;
         }
         return new ScheduleSpec(
-                scheduleStartDate, scheduleEndDate,
+                scheduleStartDate,
                 dailyStartTime, dailyEndTime,
                 timezone, allowedDaysOfWeek, holidayCalendarId);
     }

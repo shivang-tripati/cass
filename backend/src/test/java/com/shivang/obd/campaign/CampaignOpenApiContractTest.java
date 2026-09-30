@@ -137,6 +137,96 @@ class CampaignOpenApiContractTest {
     // === VB-6D.2: retry rule documentation in the GENERATED spec ===
 
     @Test
+    @DisplayName("OAS-VB8H: CampaignExecutionResponse documents the derived deferred reason (B10)")
+    void executionDeferredReasonIsDocumented() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        JsonNode response = schema(spec, "CampaignExecutionResponse");
+        assertThat(response.isMissingNode()).isFalse();
+
+        assertThat(response.at("/properties/deferredReason/type").asText())
+                .as("nullable, because it only applies while the execution is REQUESTED")
+                .isIn("string", "");
+        assertThat(response.at("/properties/deferredReason/description").asText().toLowerCase())
+                .as("the description must say it is derived and never persisted")
+                .contains("derived")
+                .contains("never persisted");
+
+        // It must not be confusable with the failure reason.
+        assertThat(response.at("/properties/failureReason").isMissingNode()).isFalse();
+        assertThat(response.at("/properties/deferredReason/description").asText())
+                .contains("failureReason");
+    }
+
+    // VB-8J: this method had @DisplayName but no @Test, so the one guard on the
+    // campaign status enum never ran. Restored, because VB-8J changes which
+    // statuses are legal and this is the assertion that would notice.
+    @Test
+    @DisplayName("OAS-VB8H: the campaign status enum is unchanged (no lifecycle API churn)")
+    void campaignStatusEnumUnchanged() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        JsonNode status = schema(spec, "CampaignExecutionResponse")
+                .at("/properties/status");
+        assertThat(status.at("/enum/0").asText()).isNotBlank();
+        assertThat(status.at("/enum").size()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("OAS-VB8J: the status endpoint documents reserved states, not engine-driven ones")
+    void statusEndpointDocumentsReservedTargets() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        String path = "/paths/~1api~1v1~1campaigns~1{id}~1status/patch";
+        assertThat(spec.at(path).isMissingNode())
+                .as("the status route must still exist, unchanged in shape")
+                .isFalse();
+
+        String conflict = spec.at(path + "/responses/409/description").asText();
+
+        // VB-8J removed the "engine-driven" attribution: no engine path writes
+        // campaign status, and none should, because campaign status is never
+        // derived from executions. The generated document is the source of
+        // truth, so it must not keep asserting the old reason.
+        assertThat(conflict)
+                .as("409 must name the reserved states")
+                .contains("RUNNING", "COMPLETED", "FAILED");
+        assertThat(conflict)
+                .as("and must not claim an execution engine performs them")
+                .doesNotContain("engine-driven");
+
+        String description = spec.at(path + "/description").asText();
+        assertThat(description)
+                .as("PAUSED -> RUNNING is no longer an operator transition")
+                .doesNotContain("PAUSED -> RUNNING");
+        assertThat(description)
+                .as("and the reserved rationale must be stated")
+                .contains("reserved");
+    }
+
+    @Test
+    @DisplayName("OAS-VB8J: execution creation documents the duplicate in-progress refusal")
+    void executionCreationDocumentsDuplicateRefusal() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        String path = "/paths/~1api~1v1~1campaigns~1{id}~1executions/post";
+        assertThat(spec.at(path).isMissingNode())
+                .as("the execution route must still exist, unchanged in shape")
+                .isFalse();
+
+        String conflict = spec.at(path + "/responses/409/description").asText();
+        // A campaign may have only one in-flight execution, otherwise each
+        // execution materialises an attempt for every contact and the same
+        // contact is dialled once per execution.
+        assertThat(conflict)
+                .as("the pre-existing idempotency-key 409 must still be documented")
+                .contains("idempotency");
+        assertThat(conflict)
+                .as("and the VB-8J refusal must be discoverable too")
+                .contains("already has an execution in progress");
+    }
+
+    // Unchanged, but still dead: this method has @DisplayName and no @Test.
+    // Left as found because it guards RetryPolicyConfig, not anything VB-8J
+    // touched. Reported rather than silently fixed.
     @DisplayName("OAS-D1: RetryPolicyConfig documents the flat allowance and the rules array")
     void retryPolicySchemaDocumented() throws Exception {
         JsonNode spec = fetchOpenApi();
@@ -591,6 +681,115 @@ class CampaignOpenApiContractTest {
         assertThat(parsed.effectiveRingSeconds())
                 .isEqualTo(com.shivang.obd.campaign.config.MissedCallRingWindow
                         .DEFAULT_RING_SECONDS);
+    }
+
+    // === VB-8B: the manual attempt endpoint's frozen-configuration contract ===
+
+    @Test
+    @DisplayName("OAS-8B-1: the manual attempt endpoint documents the frozen-configuration boundary")
+    void manualAttemptDocumentsTheFrozenBoundary() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        String path = "/paths/~1api~1v1~1campaigns~1{campaignId}~1executions"
+                + "~1{executionId}~1attempts/post";
+        assertThat(spec.at(path).isMissingNode())
+                .as("the manual attempt route must still exist, unchanged in shape")
+                .isFalse();
+
+        String description = spec.at(path + "/description").asText();
+
+        // The endpoint's contract genuinely changed in VB-8B: the request can no
+        // longer override execution configuration. The generated document is the
+        // source of truth, so it must say so.
+        assertThat(description)
+                .as("the operation must state that the snapshot is authoritative")
+                .contains("snapshot");
+        assertThat(description)
+                .as("and that a campaign edit cannot change what the call dials")
+                .contains("cannot change what this call");
+        assertThat(description)
+                .as("and that a terminal execution cannot be resurrected")
+                .contains("terminal execution");
+
+        // The new 409 causes must be discoverable, not just the old duplicate one.
+        String conflict = spec.at(path + "/responses/409/description").asText();
+        assertThat(conflict).contains("terminal execution");
+        assertThat(conflict).contains("didId");
+        assertThat(conflict).contains("attempt number");
+
+        // And the shape is unchanged: same path, same request fields.
+        JsonNode ref = spec.at(path + "/requestBody/content/"
+                + "application~1json/schema/$ref");
+        assertThat(ref.asText())
+                .as("the request schema reference is unchanged - no new API version")
+                .isNotBlank();
+        String dto = ref.asText().substring(ref.asText().lastIndexOf('/') + 1);
+        for (String field : new String[] {"contactId", "didId", "attemptNumber", "scheduledAt"}) {
+            assertThat(spec.at("/components/schemas/" + dto + "/properties/" + field)
+                    .isMissingNode())
+                    .as("%s.%s must still exist: no field was renamed or removed", dto, field)
+                    .isFalse();
+        }
+    }
+
+    // === VB-7C.3: the snapshot hardening is invisible to the public API ===
+
+    @Test
+    @DisplayName("OAS-7C.3-1: nothing about the execution snapshot reaches the public document")
+    void snapshotStaysInternalToThePublicApi() throws Exception {
+        JsonNode spec = fetchOpenApi();
+        String document = spec.toString();
+
+        // The snapshot gained a field this phase. It is execution-owned internal
+        // state, so none of it may appear anywhere in the generated document -
+        // not as a schema, not as a property, not inside a description.
+        for (String leaked : new String[] {
+                "CampaignConfigurationSnapshot",
+                "CampaignExecutionConfiguration",
+                "integration_config",
+                "asIntegrationConfig",
+                "retry_rules",
+                "max_call_duration_seconds"}) {
+            assertThat(document.contains(leaked))
+                    .as("the generated document must not mention %s", leaked)
+                    .isFalse();
+        }
+
+        // No generated schema is a snapshot carrier either.
+        assertThat(spec.at("/components/schemas").propertyNames())
+                .as("no execution-snapshot schema may be generated")
+                .noneMatch(name -> name.contains("Snapshot")
+                        || name.contains("ExecutionConfiguration"));
+    }
+
+    @Test
+    @DisplayName("OAS-7C.3-2: the public campaign schemas are exactly what VB-7C.2 defined")
+    void publicCampaignSchemasAreUnchanged() throws Exception {
+        JsonNode spec = fetchOpenApi();
+
+        // The integration configuration is still exposed the way VB-7C.2
+        // exposed it - as a typed block on the campaign DTOs. Freezing it must
+        // not have changed how it is presented.
+        for (String dto : new String[] {"CreateCampaignRequest", "UpdateCampaignRequest",
+                "CampaignResponse"}) {
+            assertThat(spec.at("/components/schemas/" + dto
+                    + "/properties/integrationConfig").isMissingNode())
+                    .as("%s still exposes integrationConfig", dto)
+                    .isFalse();
+        }
+
+        // ... and it was not flattened into loose top-level webhook/privacy
+        // properties, which is the shape a leak would take.
+        for (String dto : new String[] {"CreateCampaignRequest", "UpdateCampaignRequest",
+                "CampaignResponse"}) {
+            for (String loose : new String[] {"webhook", "reportPrivacy", "webhookEndpoint",
+                    "selectedEvents", "privacyPolicy"}) {
+                assertThat(spec.at("/components/schemas/" + dto + "/properties/" + loose)
+                        .isMissingNode())
+                        .as("%s must not flatten the integration config into %s", dto, loose)
+                        .isTrue();
+            }
+        }
     }
 
     // === VB-7C.2: integration configuration contract ===

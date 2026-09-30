@@ -116,7 +116,6 @@ class CampaignMissedCallValidationTest {
                 GROUP_ID, null, mode, audioAssetId, null,
                 new com.shivang.obd.campaign.dto.ScheduleConfig(
                         java.time.LocalDate.now().plusDays(1),
-                        java.time.LocalDate.now().plusDays(2),
                         java.time.LocalTime.of(10, 0), java.time.LocalTime.of(18, 0),
                         "Asia/Kolkata", null, null),
                 null, typeConfig, null, true, null);

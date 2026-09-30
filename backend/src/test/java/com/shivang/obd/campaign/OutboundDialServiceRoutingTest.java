@@ -99,7 +99,7 @@ class OutboundDialServiceRoutingTest {
                 dialer, eligibilityService,
                 voiceRoutingService, voiceCapacity, callSessionRepository, callLegRepository,
                 dailyDialLimitService, dailyAttemptSafetyService,
-                new PreDispatchFailureMapper());
+                new PreDispatchFailureMapper(), TransactionTestSupport.direct(), new ExecutionScheduleCalculator());
 
         // VB-6C.1 defaults: usage day resolves, bucket admits. Individual
         // tests override the exact behavior they exercise.
@@ -165,6 +165,15 @@ class OutboundDialServiceRoutingTest {
         campaign.setId(campaignId);
         campaign.setTenantId(tenantId);
         campaign.setCampaignType(CampaignType.PLAYFILE);
+        // VB-8H: the dial path now gates on the campaign's lifecycle state
+        // (any non-executable state - PAUSED, ARCHIVED, DRAFT, COMPLETED,
+        // FAILED - stops dispatch), so the fixture campaign must be in an
+        // executable state exactly as the fixture execution is below. Without
+        // this the campaign status is null, which is not executable, and every
+        // attempt would be requeued instead of dispatched. A real campaign
+        // always carries a status, so this makes the fixture more faithful
+        // rather than less.
+        campaign.setStatus(CampaignStatus.SCHEDULED);
         when(campaignRepository.findByIdAndTenantIdAndDeletedAtIsNull(campaignId, tenantId))
                 .thenReturn(Optional.of(campaign));
 
@@ -174,14 +183,40 @@ class OutboundDialServiceRoutingTest {
         execution.setCampaignId(campaignId);
         execution.setTenantId(tenantId);
         execution.setConfigurationSnapshotId(UUID.randomUUID());
+        // VB-8D: the dial path refuses a terminal execution before any dispatch
+        // work, so the fixture execution must be in a dispatchable state.
+        execution.setStatus(CampaignExecutionStatus.RUNNING);
         when(executionRepository.findByIdAndDeletedAtIsNull(executionId))
                 .thenReturn(Optional.of(execution));
+        // VB-8D: the dial step claims each due attempt with one conditional
+        // QUEUED -> IN_PROGRESS update, then re-reads it inside the dispatch
+        // transaction. Mirrored here so the fixture really moves, keeping these
+        // assertions on the same object they always used.
+        org.mockito.Mockito.lenient()
+                .when(attemptRepository.claimForDispatch(
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.eq(CallAttemptStatus.QUEUED),
+                        org.mockito.ArgumentMatchers.eq(CallAttemptStatus.IN_PROGRESS),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> {
+                    if (attempt.getStatus() != CallAttemptStatus.QUEUED) {
+                        return 0;
+                    }
+                    attempt.setStatus(CallAttemptStatus.IN_PROGRESS);
+                    attempt.setStartedAt(java.time.Instant.now());
+                    return 1;
+                });
+        org.mockito.Mockito.lenient()
+                .when(attemptRepository.findByIdAndTenantIdAndDeletedAtIsNull(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> Optional.of(attempt));
         when(configurationService.requireExecutionSnapshot(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(CampaignExecutionConfiguration.materialize(
                         campaignId, tenantId,
                         new CampaignConfigurationSnapshot(
                                 CampaignType.PLAYFILE, AUDIENCE_GROUP_ID, null, null, null, null,
-                                null, null, null, null, null, null, null,
+                                null, null, null, null, null, null,
                                 0, null, RetryStrategy.FIXED, null, false, null),
                         java.time.Instant.now()));
     }

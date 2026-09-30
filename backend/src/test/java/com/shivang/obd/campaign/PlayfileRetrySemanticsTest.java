@@ -84,7 +84,11 @@ class PlayfileRetrySemanticsTest {
                         didRepository, null, null),
                 authorizationService,
                 currentUserProvider, readinessService, tenantRepository,
-                runtimeConfigResolver, new RetryPolicyService(), dialService, eslEventProcessor,
+                runtimeConfigResolver,
+                // VB-8B: the one canonical calling-window calculation.
+                new ExecutionScheduleCalculator(),
+                TransactionTestSupport.direct(),
+                new RetryPolicyService(), dialService, eslEventProcessor,
                 org.mockito.Mockito.mock(StaleCallReconciler.class));
 
         campaign = new CampaignEntity();

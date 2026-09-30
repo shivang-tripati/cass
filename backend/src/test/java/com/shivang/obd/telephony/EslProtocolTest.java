@@ -94,7 +94,11 @@ class EslProtocolTest {
 
         assertThat(server.receivedCommands())
                 .anySatisfy(c -> assertThat(c).isEqualTo("auth " + PASSWORD))
-                .anySatisfy(c -> assertThat(c).startsWith("uuid_kill "));
+                // Phase D (J4): the api prefix is required - a real switch
+                // answers a bare `uuid_kill` with "-ERR command not found".
+                // This assertion previously required the BARE form, which
+                // asserted behaviour that cannot work against a real switch.
+                .anySatisfy(c -> assertThat(c).startsWith("api uuid_kill "));
     }
 
     @Test
@@ -130,14 +134,33 @@ class EslProtocolTest {
     }
 
     @Test
-    @DisplayName("SEQ-5a: a reply with no verdict at all is a failure, never a false success")
+    @DisplayName("SEQ-5a: a command/reply with no verdict is a failure, never a false success")
     void verdictlessReplyIsNotSuccess() {
         EslClient connected = connected();
-        server.replyWhen("uuid_kill", "Content-Type: command/reply\n\n");
+        // `bgapi` is a genuine inbound command, so it answers with
+        // command/reply - and a command/reply carrying no verdict is malformed.
+        server.replyWhen("bgapi originate", "Content-Type: command/reply\n\n");
 
-        assertThatThrownBy(() -> connected.hangup("11111111-2222-3333-4444-555555555555"))
+        assertThatThrownBy(() -> connected.originate("+15551230000", "1002",
+                "fs-gateway", "external", UUID.randomUUID().toString()))
                 .isInstanceOf(EslException.class)
                 .hasMessageContaining("Unexpected reply");
+    }
+
+    @Test
+    @DisplayName("SEQ-5b: an api/response with no verdict is SUCCESS, because that is its normal shape")
+    void verdictlessApiResponseIsSuccess() {
+        EslClient connected = connected();
+        // A real FreeSWITCH answers `api <cmd>` with Content-Type api/response and
+        // an EMPTY Reply-Text, and the result is the body. Requiring "+OK" here
+        // rejects every successful api call - which is what happened before
+        // Phase D. The verdict that means failure is -ERR, and nothing else.
+        server.replyWhen("api uuid_kill", "Content-Type: api/response\n\n");
+
+        org.assertj.core.api.Assertions.assertThatCode(
+                () -> connected.hangup(UUID.randomUUID().toString()))
+                .as("a verdictless api/response is the normal, successful shape")
+                .doesNotThrowAnyException();
     }
 
     // =====================================================================
@@ -213,6 +236,133 @@ class EslProtocolTest {
         EslEvent event = received.get(0);
         assertThat(event.getEventName()).isEqualTo("CHANNEL_ANSWER");
         assertThat(event.getCallUuid()).isEqualTo(callUuid);
+    }
+
+    @Test
+    @DisplayName("PHASE D J1: an event carrying the REAL channel headers resolves its UUID")
+    void realChannelHeadersResolveChannelUuid() throws Exception {
+        List<EslEvent> received = new CopyOnWriteArrayList<>();
+        CountDownLatch subscribed = new CountDownLatch(1);
+        server.onConnect(subscribed::countDown);
+
+        startEventLoop(received);
+
+        assertThat(subscribed.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(server.awaitCommand("event plain", 5000)).isTrue();
+
+        String channelUuid = UUID.randomUUID().toString();
+        // Exactly the header set a live FreeSWITCH emits: no Call-UUID at all.
+        server.pushChannelEvent("CHANNEL_HANGUP", channelUuid,
+                Map.of("Hangup-Cause", "NORMAL_CLEARING"));
+
+        assertThat(awaitCount(received, 1, 5000))
+                .as("the real-header event must be delivered")
+                .isTrue();
+        EslEvent event = received.get(0);
+        assertThat(event.getCallUuid())
+                .as("channel identity must resolve without a Call-UUID header")
+                .isEqualTo(channelUuid);
+        assertThat(event.getHangupCause()).isEqualTo("NORMAL_CLEARING");
+    }
+
+    @Test
+    @DisplayName("PHASE D J1: an event with only Unique-ID still resolves its UUID")
+    void uniqueIdAloneResolvesChannelUuid() throws Exception {
+        List<EslEvent> received = new CopyOnWriteArrayList<>();
+        CountDownLatch subscribed = new CountDownLatch(1);
+        server.onConnect(subscribed::countDown);
+
+        startEventLoop(received);
+
+        assertThat(subscribed.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(server.awaitCommand("event plain", 5000)).isTrue();
+
+        String channelUuid = UUID.randomUUID().toString();
+        server.pushEvent("CHANNEL_ANSWER", Map.of("Unique-ID", channelUuid));
+
+        assertThat(awaitCount(received, 1, 5000)).isTrue();
+        assertThat(received.get(0).getCallUuid()).isEqualTo(channelUuid);
+    }
+
+    @Test
+    @DisplayName("PHASE D J2: the subscription includes CHANNEL_EXECUTE_COMPLETE")
+    void subscriptionIncludesExecuteComplete() throws Exception {
+        List<EslEvent> received = new CopyOnWriteArrayList<>();
+        CountDownLatch subscribed = new CountDownLatch(1);
+        server.onConnect(subscribed::countDown);
+
+        startEventLoop(received);
+
+        assertThat(subscribed.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(server.awaitCommand("event plain", 5000)).isTrue();
+
+        assertThat(EslClient.SUBSCRIBED_EVENTS)
+                .as("playback-failure detection depends on this event arriving")
+                .contains("CHANNEL_EXECUTE_COMPLETE");
+
+        // And it must actually be delivered, not merely requested.
+        String channelUuid = UUID.randomUUID().toString();
+        server.pushChannelEvent("CHANNEL_EXECUTE_COMPLETE", channelUuid);
+        assertThat(awaitCount(received, 1, 5000))
+                .as("CHANNEL_EXECUTE_COMPLETE must be delivered")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("PHASE D J4: media and hangup commands are api-prefixed, as the switch requires")
+    void channelCommandsAreApiPrefixed() throws Exception {
+        String channelUuid = UUID.randomUUID().toString();
+
+        try (EslClient client = connectedClient()) {
+            client.playFile(channelUuid, "/media/obd/phase-c-test-tone.wav");
+        }
+        try (EslClient client = connectedClient()) {
+            client.hangup(channelUuid);
+        }
+        try (EslClient client = connectedClient()) {
+            client.bridge(channelUuid, UUID.randomUUID().toString());
+        }
+
+        assertThat(server.awaitCommand("api uuid_broadcast", 5000))
+                .as("a real switch rejects a bare uuid_broadcast with "
+                        + "'-ERR command not found'")
+                .isTrue();
+        assertThat(server.awaitCommand("api uuid_kill", 5000))
+                .as("a real switch rejects a bare uuid_kill")
+                .isTrue();
+        assertThat(server.awaitCommand("api uuid_bridge", 5000)).isTrue();
+
+        // And no bare (unprefixed) form may be sent, because the double now
+        // models the switch's rejection just as faithfully.
+        assertThat(server.receivedCommands())
+                .noneMatch(c -> c.startsWith("uuid_")
+                        || c.startsWith("show ")
+                        || c.startsWith("sofia "));
+    }
+
+    @Test
+    @DisplayName("PHASE D: originate stays a bare bgapi command, which is correct")
+    void originateIsNotApiPrefixed() throws Exception {
+        try (EslClient client = connectedClient()) {
+            client.originate("+15551230000", "1002", "fs-gateway", "external",
+                    UUID.randomUUID().toString());
+        }
+        assertThat(server.awaitCommand("bgapi originate", 5000)).isTrue();
+        assertThat(server.receivedCommands())
+                .as("bgapi is a genuine inbound command; api-prefixing it would break it")
+                .noneMatch(c -> c.startsWith("api bgapi originate"));
+    }
+
+    @Test
+    @DisplayName("PHASE D: an api reply has an empty Reply-Text and the result is in the body")
+    void apiReplyCarriesResultInBody() throws Exception {
+        server.replyWhen("api status",
+                "Content-Type: api/response\nContent-Length: 3\n\nUP\n");
+        try (EslClient client = connectedClient()) {
+            assertThat(client.apiStatus("status"))
+                    .as("an api result must be read from the body, not Reply-Text")
+                    .isEqualTo("UP\n");
+        }
     }
 
     @Test
@@ -360,6 +510,19 @@ class EslProtocolTest {
     // =====================================================================
     // helpers
     // =====================================================================
+
+    /**
+     * A connected, authenticated client for issuing a one-off command.
+     *
+     * <p>Phase D: the double now rejects commands it does not recognise, exactly
+     * as FreeSWITCH does, so a client that sends a malformed command fails
+     * loudly here instead of being silently accepted.
+     */
+    private EslClient connectedClient() throws IOException, InterruptedException {
+        EslClient client = new EslClient(properties());
+        client.connect();
+        return client;
+    }
 
     private void startEventLoop(List<EslEvent> received) {
         Thread thread = new Thread(() -> {

@@ -164,12 +164,11 @@ public class CampaignReadinessService {
      * Only SCHEDULED and RUNNING are executable.
      */
     private void checkLifecycleState(CampaignEntity campaign, List<CampaignReadinessReason> reasons) {
-        CampaignStatus status = campaign.getStatus();
-        if (status != CampaignStatus.SCHEDULED && status != CampaignStatus.RUNNING) {
-            reasons.add(new CampaignReadinessReason(
-                "CAMPAIGN_NOT_EXECUTABLE_STATE",
-                "Campaign is not in an executable state: " + status.name() + ". Only SCHEDULED or RUNNING campaigns can execute."
-            ));
+        // VB-8B: the executable set now lives in CampaignLifecyclePolicy, so this
+        // gate and CampaignLifecyclePolicy.isExecutable cannot drift. Behaviour is
+        // unchanged: still exactly SCHEDULED and RUNNING.
+        if (!CampaignLifecyclePolicy.isExecutable(campaign.getStatus())) {
+            reasons.add(CampaignLifecyclePolicy.notExecutableReason(campaign.getStatus()));
         }
     }
 
@@ -182,7 +181,6 @@ public class CampaignReadinessService {
 
         // A schedule must have at least a timezone if any window is configured
         boolean windowConfigured = schedule.getStartDate() != null
-            || schedule.getEndDate() != null
             || schedule.getStartTime() != null
             || schedule.getEndTime() != null;
 
@@ -230,18 +228,16 @@ public class CampaignReadinessService {
             : ZoneId.systemDefault();
         ZonedDateTime now = ZonedDateTime.now(zone);
 
-        // Date window check
+        // Date window check. There is no schedule end: a campaign becomes
+        // eligible at its start date and stays eligible across every later
+        // calling window until its work is exhausted. A closed daily window is
+        // a dispatch-time deferral, not a readiness failure, so it is not
+        // reported here.
         LocalDate today = now.toLocalDate();
         if (schedule.getStartDate() != null && today.isBefore(schedule.getStartDate())) {
             reasons.add(new CampaignReadinessReason(
                 "SCHEDULE_NOT_ELIGIBLE",
                 "Campaign schedule has not started yet (starts " + schedule.getStartDate() + ")."
-            ));
-        }
-        if (schedule.getEndDate() != null && today.isAfter(schedule.getEndDate())) {
-            reasons.add(new CampaignReadinessReason(
-                "SCHEDULE_EXPIRED",
-                "Campaign schedule has ended (ended " + schedule.getEndDate() + ")."
             ));
         }
 

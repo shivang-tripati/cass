@@ -834,7 +834,7 @@ class CampaignResourceValidationPostgresIntegrationTest {
 
     private ScheduleConfig scheduleConfig() {
         return new ScheduleConfig(
-            LocalDate.now().plusDays(1), LocalDate.now().plusDays(2),
+            LocalDate.now().plusDays(1),
             LocalTime.of(10, 0), LocalTime.of(18, 0),
             "Asia/Kolkata", null, null);
     }

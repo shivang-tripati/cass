@@ -156,6 +156,8 @@ class CampaignGovernanceHardeningPostgresIntegrationTest {
     private CampaignExecutionService executionService;
     private CallAttemptService attemptService;
     private CampaignConfigurationService configurationService;
+    /** VB-8B: the frozen-configuration boundary the attempt service now uses. */
+    private CampaignRuntimeConfigResolver runtimeConfigResolver;
     private com.shivang.obd.authz.AuthorizationService allowAll;
     private CurrentUserProvider currentUser;
     private CampaignResourceValidationService validator;
@@ -189,15 +191,20 @@ class CampaignGovernanceHardeningPostgresIntegrationTest {
             // Autowired repository field must be declared below.
             configurationVersionRepository,
             new com.shivang.obd.campaign.config.CampaignTypeConfigValidator());
+        runtimeConfigResolver = new CampaignRuntimeConfigResolver(configurationService);
         readinessService = new CampaignReadinessService(
             campaignRepository, allowAll, currentUser,
             contactGroupRepository, validator, tenantRepository);
         executionService = new CampaignExecutionService(
             campaignRepository, executionRepository, allowAll, currentUser,
             readinessService, tenantRepository, configurationService);
+        // VB-8B: CallAttemptService no longer takes CampaignRepository (it must not
+        // be able to read campaign configuration), and now takes the frozen-config
+        // resolver, the shared membership bridge, and the canonical schedule calculator.
         attemptService = new CallAttemptService(
-            campaignRepository, executionRepository, attemptRepository,
-            allowAll, currentUser, contactRepository, contactGroupRepository,
+            executionRepository, attemptRepository,
+            allowAll, currentUser, contactRepository, memberRepository,
+            runtimeConfigResolver, new ExecutionScheduleCalculator(),
             validator, tenantRepository);
     }
 
@@ -462,7 +469,6 @@ class CampaignGovernanceHardeningPostgresIntegrationTest {
             c.setAudioAssetId(audioId);
             c.setSchedule(new ScheduleSpec(
                 java.time.LocalDate.now().plusDays(1),
-                java.time.LocalDate.now().plusDays(2),
                 java.time.LocalTime.of(9, 0), java.time.LocalTime.of(17, 0),
                 "Asia/Kolkata", null, null));
         });
@@ -764,7 +770,7 @@ class CampaignGovernanceHardeningPostgresIntegrationTest {
         // schedule carrying a timezone is the minimal correction, and keeps
         // every test in this class scoped to its own dimension - a date window
         // would introduce SCHEDULE_NOT_ELIGIBLE depending on the day it runs.
-        c.setSchedule(new ScheduleSpec(null, null, null, null, "Asia/Kolkata", null, null));
+        c.setSchedule(new ScheduleSpec(null, null, null, "Asia/Kolkata", null, null));
             c.setRetryPolicy(new RetryPolicySpec(0, null, RetryStrategy.FIXED));
             return campaignRepository.saveAndFlush(c).getId();
         });

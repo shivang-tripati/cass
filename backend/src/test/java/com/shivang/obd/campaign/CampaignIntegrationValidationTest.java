@@ -172,7 +172,6 @@ class CampaignIntegrationValidationTest {
                 type.playsMedia() ? ASSET_ID : null, null,
                 new com.shivang.obd.campaign.dto.ScheduleConfig(
                         java.time.LocalDate.now().minusDays(1),
-                        java.time.LocalDate.now().plusDays(1),
                         java.time.LocalTime.of(0, 0), java.time.LocalTime.of(23, 59),
                         "Asia/Kolkata", null, null),
                 null, typeConfigFor(type), integration, true, null);

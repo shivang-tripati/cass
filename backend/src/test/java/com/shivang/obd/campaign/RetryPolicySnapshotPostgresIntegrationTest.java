@@ -240,7 +240,7 @@ class RetryPolicySnapshotPostgresIntegrationTest {
                 "retry-c-" + SEQ.incrementAndGet(), null, CampaignType.PLAYFILE, null,
                 null, seedDid(tenantId),
                 ContentMode.AUDIO, seedAudio(tenantId), null,
-                new ScheduleConfig(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 12, 31),
+                new ScheduleConfig(LocalDate.of(2026, 9, 1),
                         FULL_DAY_START, FULL_DAY_END, "Asia/Kolkata", Set.of(), null),
                 retryPolicy, null, null, false, null);
         return campaignService.create(request, null).data().id();
@@ -303,7 +303,6 @@ class RetryPolicySnapshotPostgresIntegrationTest {
                     current.getContentMode(), current.getAudioAssetId(), current.getTtsTemplateId(),
                     new ScheduleConfig(
                             current.getSchedule().getStartDate(),
-                            current.getSchedule().getEndDate(),
                             current.getSchedule().getStartTime(),
                             current.getSchedule().getEndTime(),
                             current.getSchedule().getTimezone(),
@@ -390,6 +389,8 @@ class RetryPolicySnapshotPostgresIntegrationTest {
                 retryPolicy(0, null, rule(RetryRuleCategory.NO_ANSWER, 1, "01:00")));
         tx().executeWithoutResult(t -> campaignService.changeStatus(campaignId,
                 new com.shivang.obd.campaign.dto.UpdateCampaignStatusRequest("SCHEDULED")));
+        settle(e1);
+
         UUID e2 = createExecution(tenantId, campaignId);
 
         // The runtime sees two genuinely different policies, and each is the one
@@ -404,6 +405,24 @@ class RetryPolicySnapshotPostgresIntegrationTest {
         assertThat(d1.nextEligibleAt()).isEqualTo(failedAt.plusSeconds(600));
         assertThat(d2.maxTotalAttempts()).isEqualTo(2);
         assertThat(d2.nextEligibleAt()).isEqualTo(failedAt.plusSeconds(60));
+    }
+
+    /**
+     * VB-8J: settles an execution so a later one may be created.
+     *
+     * The product allows one in-flight execution per campaign, because two
+     * concurrent executions would materialise an attempt for every contact in
+     * the audience twice. Snapshot immutability does not depend on the pair
+     * being concurrent: what it asserts is that the frozen row is never
+     * rewritten, which a sequential pair establishes just as well.
+     */
+    private void settle(UUID executionId) {
+        tx().executeWithoutResult(t -> {
+            CampaignExecution e = executionRepository
+                    .findByIdAndDeletedAtIsNull(executionId).orElseThrow();
+            e.setStatus(CampaignExecutionStatus.COMPLETED);
+            executionRepository.saveAndFlush(e);
+        });
     }
 
     @Test
@@ -462,7 +481,7 @@ class RetryPolicySnapshotPostgresIntegrationTest {
         CreateCampaignRequest request = new CreateCampaignRequest(
                 "bad-retry", null, CampaignType.PLAYFILE, null,
                 null, seedDid(tenantId), ContentMode.AUDIO, seedAudio(tenantId), null,
-                new ScheduleConfig(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 12, 31),
+                new ScheduleConfig(LocalDate.of(2026, 9, 1),
                         FULL_DAY_START, FULL_DAY_END, "Asia/Kolkata", Set.of(), null),
                 // duplicate category: bean validation cannot express this
                 retryPolicy(0, null,

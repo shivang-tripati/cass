@@ -147,7 +147,7 @@ class PlayfileExecutionServiceTest {
                         new CampaignConfigurationSnapshot(
                                 CampaignType.PLAYFILE, null, null, ContentMode.AUDIO,
                                 ASSET_ID, null,
-                                null, null, null, null, null, null, null,
+                                null, null, null, null, null, null,
                                 0, null, RetryStrategy.FIXED, null, false, null),
                         java.time.Instant.now()));
 
@@ -171,7 +171,7 @@ class PlayfileExecutionServiceTest {
                     CAMPAIGN_ID, TENANT_A,
                     new CampaignConfigurationSnapshot(
                             type, null, null, mode, audioAssetId, null,
-                            null, null, null, null, null, null, null,
+                            null, null, null, null, null, null,
                             0, null, RetryStrategy.FIXED, null, false, null),
                     java.time.Instant.now()));
     }

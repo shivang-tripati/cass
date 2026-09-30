@@ -151,7 +151,7 @@ class CampaignValidationServiceTest {
             "Weekday blast", null, CampaignType.PLAYFILE, CampaignRunMode.RECURRING,
             null, null,
             ContentMode.AUDIO, UUID.randomUUID(), null,
-            new ScheduleConfig(LocalDate.of(2026, 9, 1), null, null, null,
+            new ScheduleConfig(LocalDate.of(2026, 9, 1), null, null,
                 "Asia/Kolkata", Set.of(), calendarId),
             new RetryPolicyConfig(0, null, null),
             null, null, false, null);
@@ -167,7 +167,7 @@ class CampaignValidationServiceTest {
     @Test
     void validRecurringCampaignWithWorkingDaysIsAccepted() {
         var request = createRequest(CampaignRunMode.RECURRING,
-            new ScheduleConfig(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 12, 31),
+            new ScheduleConfig(LocalDate.of(2026, 9, 1),
                 null, null, "Asia/Kolkata",
                 Set.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
                     DayOfWeek.THURSDAY, DayOfWeek.FRIDAY),
@@ -191,7 +191,7 @@ class CampaignValidationServiceTest {
     }
 
     private ScheduleConfig schedule(String timezone) {
-        return new ScheduleConfig(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2),
+        return new ScheduleConfig(LocalDate.of(2026, 9, 1),
             null, null, timezone, Set.of(DayOfWeek.MONDAY), null);
     }
 

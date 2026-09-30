@@ -265,6 +265,8 @@ class CampaignConfigurationSnapshotPostgresIntegrationTest {
             campaignRepository.saveAndFlush(c);
         });
 
+        settle(e1.data().id());
+
         var e2 = transactionTemplate.execute(tx ->
             executionService.execute(campaignId, new ExecuteCampaignRequest(null)));
 
@@ -279,6 +281,24 @@ class CampaignConfigurationSnapshotPostgresIntegrationTest {
             snapshotRepository.findById(e2.data().configurationSnapshotId())).orElseThrow();
         assertThat(s1.getConfiguration().getDidId()).isEqualTo(didV1);
         assertThat(s2.getConfiguration().getDidId()).isEqualTo(didV2);
+    }
+
+    /**
+     * VB-8J: settles an execution so a later one may be created.
+     *
+     * The product allows one in-flight execution per campaign, because two
+     * concurrent executions would materialise an attempt for every contact in
+     * the audience twice. Snapshot immutability does not depend on the pair
+     * being concurrent: what it asserts is that the frozen row is never
+     * rewritten, which a sequential pair establishes just as well.
+     */
+    private void settle(UUID executionId) {
+        transactionTemplate.executeWithoutResult(tx -> {
+            CampaignExecution e = executionRepository
+                    .findByIdAndDeletedAtIsNull(executionId).orElseThrow();
+            e.setStatus(CampaignExecutionStatus.COMPLETED);
+            executionRepository.saveAndFlush(e);
+        });
     }
 
     // === CFG-C: running execution stays on its snapshot ===
@@ -477,7 +497,7 @@ class CampaignConfigurationSnapshotPostgresIntegrationTest {
     /** Schedule with a timezone and a wide-open window — always eligible. */
     private com.shivang.obd.campaign.ScheduleSpec alwaysEligibleSchedule() {
         return new com.shivang.obd.campaign.ScheduleSpec(
-            null, null, null, null, "UTC", null, null);
+            null, null, null, "UTC", null, null);
     }
 
     private UUID seedApprovedAudioAsset(UUID tenantId) {

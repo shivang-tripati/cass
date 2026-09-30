@@ -275,7 +275,7 @@ class TtsGovernancePostgresIntegrationTest {
             // schedule is the minimal shape that satisfies it without making
             // these assertions depend on the day the suite runs.
             c.setSchedule(new com.shivang.obd.campaign.ScheduleSpec(
-                null, null, null, null, "Asia/Kolkata", null, null));
+                null, null, null, "Asia/Kolkata", null, null));
             return campaignRepository.saveAndFlush(c).getId();
         });
     }
@@ -303,7 +303,7 @@ class TtsGovernancePostgresIntegrationTest {
             "c-campaign-" + SEQ.incrementAndGet(), null, CampaignType.CONNECT_BY_AGENT, null,
             groupId, null, ContentMode.TTS, null, templateId,
             new com.shivang.obd.campaign.dto.ScheduleConfig(
-                java.time.LocalDate.now().plusDays(1), java.time.LocalDate.now().plusDays(2),
+                java.time.LocalDate.now().plusDays(1),
                 java.time.LocalTime.of(10, 0), java.time.LocalTime.of(18, 0),
                 "Asia/Kolkata", null, null),
             null,

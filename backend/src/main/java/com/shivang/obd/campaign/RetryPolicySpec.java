@@ -111,4 +111,26 @@ public class RetryPolicySpec {
     public boolean hasRules() {
         return rules != null && !rules.isEmpty();
     }
+
+    /**
+     * VB-8B: the highest attempt number this policy can ever permit.
+     *
+     * <p>Derived through {@link #flatAsRule} rather than by restating the
+     * {@code 1 + maxRetries} arithmetic, so there is still exactly one place
+     * that knows how a flat allowance becomes a total-attempt budget.
+     *
+     * <p>The flat allowance is the correct ceiling because per-category rules
+     * <b>can only restrict</b> — a rule may switch a category off or lower its
+     * allowance, never raise it above the flat one. So no category can permit
+     * more attempts than this, which makes it the bound any attempt-creating
+     * path may enforce regardless of outcome category.
+     *
+     * <p>{@link RetryRuleCategory#FAILED} is used only as a representative
+     * category: {@link #flatAsRule} is category-independent in its arithmetic,
+     * and choosing a category avoids inventing a new enum constant for "no
+     * category yet".
+     */
+    public int maxPermittedAttemptNumber() {
+        return flatAsRule(RetryRuleCategory.FAILED).maxTotalAttempts();
+    }
 }

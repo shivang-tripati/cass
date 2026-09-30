@@ -176,7 +176,7 @@ class DialBatchContinuationPostgresIntegrationTest {
                 callSessionRepository, callLegRepository,
                 // VB-6C.1: real policy service over the real ledger tables.
                 dailyDialLimitService, dailyAttemptSafetyService,
-                new PreDispatchFailureMapper());
+                new PreDispatchFailureMapper(), new org.springframework.transaction.support.TransactionTemplate(transactionManager), new ExecutionScheduleCalculator());
     }
 
     /** Seeds tenant, campaign, snapshot (group+DID refs), execution; returns group id. */

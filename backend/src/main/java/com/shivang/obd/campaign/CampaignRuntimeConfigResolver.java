@@ -76,7 +76,46 @@ public class CampaignRuntimeConfigResolver {
              * default of 300s. Bounds the active call session, not a ring
              * timeout and not a playback length.
              */
-            Integer maxCallDurationSeconds) {
+            Integer maxCallDurationSeconds,
+            /**
+             * VB-7C.3: the frozen webhook + report privacy configuration, or
+             * {@code null} when the campaign configured no integration block.
+             *
+             * <p>Frozen, so a future delivery or reporting consumer reads its
+             * configuration from here and never from the mutable
+             * {@code Campaign} row. {@code null} is preserved rather than
+             * defaulted, so "never configured" stays distinguishable from
+             * "configured to the default". Read it through
+             * {@link #asIntegrationConfig()}.
+             */
+            com.shivang.obd.campaign.config.CampaignIntegrationConfig integrationConfig) {
+
+        /**
+         * The pre-VB-7C.3 shape: no integration configuration, so the campaign
+         * configured none. Retained so existing construction sites keep their
+         * exact previous meaning.
+         */
+        public CampaignRuntimeConfig(
+                UUID campaignId,
+                CampaignType campaignType,
+                UUID contactGroupId,
+                UUID didId,
+                ContentMode contentMode,
+                UUID audioAssetId,
+                UUID ttsTemplateId,
+                Boolean callOnWhitelistNumbers,
+                RetryPolicySpec retryPolicy,
+                ScheduleSpec schedule,
+                com.shivang.obd.campaign.config.ConfigSchemaVersion typeConfigSchemaVersion,
+                CampaignTypeConfig typeConfig,
+                Integer dailyDialLimit,
+                Integer maxDailyAttempts,
+                Integer maxCallDurationSeconds) {
+            this(campaignId, campaignType, contactGroupId, didId, contentMode, audioAssetId,
+                    ttsTemplateId, callOnWhitelistNumbers, retryPolicy, schedule,
+                    typeConfigSchemaVersion, typeConfig, dailyDialLimit, maxDailyAttempts,
+                    maxCallDurationSeconds, null);
+        }
 
         /**
          * The pre-VB-6D.3 shape: no daily-attempt override, so the platform
@@ -99,7 +138,22 @@ public class CampaignRuntimeConfigResolver {
                 Integer dailyDialLimit) {
             this(campaignId, campaignType, contactGroupId, didId, contentMode, audioAssetId,
                     ttsTemplateId, callOnWhitelistNumbers, retryPolicy, schedule,
-                    typeConfigSchemaVersion, typeConfig, dailyDialLimit, null, null);
+                    typeConfigSchemaVersion, typeConfig, dailyDialLimit, null, null, null);
+        }
+
+        /**
+         * VB-7C.3: the frozen integration configuration, read from the FROZEN
+         * execution snapshot and never from the live campaign.
+         *
+         * <p>Empty when the campaign configured no integration block. This is
+         * the accessor a future webhook-delivery or reporting component should
+         * use, and using it is what keeps such a component inside the immutable
+         * execution model: the value it reads cannot change while the execution
+         * runs, no matter how the campaign is edited afterwards.
+         */
+        public java.util.Optional<com.shivang.obd.campaign.config.CampaignIntegrationConfig>
+                asIntegrationConfig() {
+            return java.util.Optional.ofNullable(integrationConfig);
         }
 
         /**
@@ -137,7 +191,13 @@ public class CampaignRuntimeConfigResolver {
                     parseTypeConfig(s.getCampaignType(), s.getTypeConfig()),
                     s.getDailyDialLimit(),
                     s.getMaxDailyAttempts(),
-                    s.getMaxCallDurationSeconds());
+                    s.getMaxCallDurationSeconds(),
+                    // VB-7C.3: parsed from the FROZEN snapshot. A future webhook
+                    // or reporting consumer reaches its configuration through
+                    // this record and therefore cannot be affected by a later
+                    // campaign edit. Absent stays absent (null), never a
+                    // synthesised default.
+                    s.asIntegrationConfig().orElse(null));
         }
 
         private static CampaignTypeConfig parseTypeConfig(

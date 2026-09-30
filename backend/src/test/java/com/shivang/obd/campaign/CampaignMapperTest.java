@@ -45,7 +45,7 @@ class CampaignMapperTest {
         entity.setRunMode(CampaignRunMode.RECURRING);
         entity.setVersion(2);
         entity.setClonedFromCampaignId(UUID.randomUUID());
-        entity.setSchedule(CampaignTestSupport.scheduleSpec(null, null, "Asia/Kolkata"));
+        entity.setSchedule(CampaignTestSupport.scheduleSpec(null, "Asia/Kolkata"));
 
         CampaignResponse response = mapper.toResponse(entity);
 
@@ -69,7 +69,7 @@ class CampaignMapperTest {
         source.setStatus(CampaignStatus.FAILED);
         source.setVersion(7);
         source.setRetryPolicy(new RetryPolicySpec(3, 300, RetryStrategy.FIXED));
-        source.setSchedule(CampaignTestSupport.scheduleSpec(null, null, "Asia/Kolkata"));
+        source.setSchedule(CampaignTestSupport.scheduleSpec(null, "Asia/Kolkata"));
         source.setDailyDialLimit(2); // VB-6C.2: configuration must clone
 
         var clone = mapper.cloneOf(source);

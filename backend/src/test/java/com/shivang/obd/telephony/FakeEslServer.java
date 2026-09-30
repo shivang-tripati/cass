@@ -173,10 +173,43 @@ final class FakeEslServer implements AutoCloseable {
             } else if (line.startsWith("bgapi originate")) {
                 writeFrame(writer, "Content-Type: command/reply\nReply-Text: +OK Job-UUID: fake-job-1",
                         null);
+            } else if (isChannelApi(line)) {
+                // Phase D: a real FreeSWITCH answers `+OK accepted` for these,
+                // and ONLY these, when they arrive api-prefixed. The previous
+                // catch-all replied +OK to anything unrecognised, which hid a
+                // total failure of the media/hangup command path: the client was
+                // sending `uuid_kill` bare and the switch answered
+                // `-ERR command not found`, and the suite stayed green.
+                writeFrame(writer, "Content-Type: command/reply",
+                        "Reply-Text: +OK Message sent");
+            } else if (line.startsWith("api ")) {
+                writeFrame(writer, "Content-Type: api/response", null);
             } else {
-                writeFrame(writer, "Content-Type: command/reply", "Reply-Text: +OK accepted");
+                // A real switch rejects anything that is not one of its inbound
+                // commands. Mirroring that is the point of the double.
+                writeFrame(writer, "Content-Type: command/reply",
+                        "Reply-Text: -ERR command not found!");
             }
         }
+    }
+
+    /**
+     * The channel-addressed APIs the platform uses, which FreeSWITCH only accepts
+     * with an {@code api} prefix.
+     */
+    private static boolean isChannelApi(String line) {
+        return line.startsWith("api uuid_kill")
+                || line.startsWith("api uuid_broadcast")
+                || line.startsWith("api uuid_bridge")
+                || line.startsWith("api uuid_transfer")
+                || line.startsWith("api uuid_dump")
+                || line.startsWith("api uuid_debug_media")
+                || line.startsWith("api show ")
+                || line.startsWith("api sofia ")
+                || line.startsWith("api module_exists")
+                || line.startsWith("api status")
+                || line.startsWith("api max_sessions")
+                || line.startsWith("api bgapi ");
     }
 
     private String takeScriptedReply(String command) {
@@ -212,6 +245,49 @@ final class FakeEslServer implements AutoCloseable {
     /** Convenience for the common Call-UUID-only event. */
     void pushEvent(String eventName, String callUuid) throws IOException {
         pushEvent(eventName, Map.of("Call-UUID", callUuid));
+    }
+
+    /**
+     * Pushes an event carrying the channel-identity headers that a REAL
+     * FreeSWITCH actually emits.
+     *
+     * <p>Phase D (J1) added this because the method above models a contract
+     * FreeSWITCH does not implement. It writes {@code Call-UUID}, and the real
+     * switch - measured with complete, unfiltered header dumps on
+     * CHANNEL_CREATE, CHANNEL_ANSWER, PLAYBACK_START, PLAYBACK_STOP and
+     * CHANNEL_HANGUP - emits <em>no</em> {@code Call-UUID} header at all. The
+     * channel UUID arrives as:
+     *
+     * <pre>
+     * Unique-ID          = &lt;uuid&gt;
+     * Channel-Call-UUID  = &lt;uuid&gt;
+     * Caller-Unique-ID   = &lt;uuid&gt;
+     * variable_call_uuid = &lt;uuid&gt;
+     * </pre>
+     *
+     * <p>Tests that only ever use the {@code Call-UUID} shape therefore prove the
+     * correlation code against a header the provider never sends. This method
+     * lets a test drive the real shape, so the correlation rule is exercised
+     * against what actually arrives.
+     *
+     * @param extra additional headers, or {@code null}
+     */
+    void pushChannelEvent(String eventName, String channelUuid,
+                          Map<String, String> extra) throws IOException {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Unique-ID", channelUuid);
+        headers.put("Channel-Call-UUID", channelUuid);
+        headers.put("Caller-Unique-ID", channelUuid);
+        headers.put("variable_call_uuid", channelUuid);
+        if (extra != null) {
+            headers.putAll(extra);
+        }
+        pushEvent(eventName, headers);
+    }
+
+    /** Real-shape event with no extra headers. */
+    void pushChannelEvent(String eventName, String channelUuid) throws IOException {
+        pushChannelEvent(eventName, channelUuid, null);
     }
 
     /**

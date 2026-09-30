@@ -18,6 +18,7 @@ import com.shivang.obd.security.CurrentUserProvider;
 import com.shivang.obd.tenant.TenantEntity;
 import com.shivang.obd.tenant.TenantRepository;
 import jakarta.persistence.EntityManager;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -321,16 +322,41 @@ class CampaignIntegrationPostgresIntegrationTest {
     }
 
     @Test
-    @DisplayName("PG-I8. the execution snapshot still does NOT carry the integration "
-            + "configuration - documented, because nothing consumes it")
-    void snapshotStillExcludesConfiguration() {
-        // OD-3, deferred. The exclusion is correct while no consumer exists and is
-        // a documented hazard: the first consumer must add it in the same phase.
-        assertThat(com.shivang.obd.campaign.CampaignConfigurationSnapshot.class
-                .getDeclaredFields())
-                .as("CampaignConfigurationSnapshot must gain no integration field yet")
-                .noneMatch(f -> f.getName().toLowerCase(java.util.Locale.ROOT)
-                        .contains("integration"));
+    @DisplayName("PG-I8. the execution snapshot NOW carries the integration configuration - "
+            + "VB-7C.3 closed the OD-3 exclusion")
+    void snapshotNowCarriesConfiguration() {
+        // OD-3, resolved. VB-7C.2 deliberately kept this out of the snapshot
+        // because nothing consumed it yet, recording that the first consumer had
+        // to add it in the same phase. VB-7C.3 closed that boundary early, before
+        // VB-8A, so the first delivery or reporting phase inherits a safe
+        // snapshot instead of having to remember.
+        //
+        // Still no consumer exists - and none is added here. Freezing a copy that
+        // nothing reads yet is exactly the point: the copy cannot drift, so the
+        // future consumer cannot be surprised by a mid-run campaign edit.
+        List<java.lang.reflect.Field> integrationFields =
+                Arrays.stream(com.shivang.obd.campaign.CampaignConfigurationSnapshot.class
+                        .getDeclaredFields())
+                        .filter(f -> f.getName().toLowerCase(java.util.Locale.ROOT)
+                                .contains("integration"))
+                        .toList();
+
+        assertThat(integrationFields)
+                .as("the frozen integration configuration is now part of the snapshot")
+                .hasSize(1);
+
+        java.lang.reflect.Field field = integrationFields.get(0);
+        assertThat(field.getName()).isEqualTo("integrationConfig");
+
+        // Bound to its own nullable JSONB column, not smuggled into type_config:
+        // type_config is campaign-TYPE-specific and rejects unknown root keys.
+        jakarta.persistence.Column column =
+                field.getAnnotation(jakarta.persistence.Column.class);
+        assertThat(column).isNotNull();
+        assertThat(column.name()).isEqualTo("integration_config");
+        assertThat(field.getAnnotation(org.hibernate.annotations.JdbcTypeCode.class))
+                .as("stored as JSONB, mirroring campaigns.integration_config")
+                .isNotNull();
     }
 
     // === helpers ===
@@ -390,7 +416,7 @@ class CampaignIntegrationPostgresIntegrationTest {
             // VB-6C.1: a campaign with no execution timezone is undialable, and
             // readiness requires one. A windowless schedule with a zone is the
             // minimal shape that is both ready and independent of the run day.
-            c.setSchedule(new ScheduleSpec(null, null, null, null, "Asia/Kolkata", null, null));
+            c.setSchedule(new ScheduleSpec(null, null, null, "Asia/Kolkata", null, null));
             tools.jackson.databind.node.ObjectNode typeConfig =
                     JsonNodeFactoryHolder.objectNode();
             tools.jackson.databind.node.ObjectNode inner =

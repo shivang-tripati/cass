@@ -189,7 +189,6 @@ public class CampaignMapper {
         }
         return new ScheduleSpec(
             view.startDate(),
-            view.endDate(),
             view.startTime(),
             view.endTime(),
             emptyToNull(view.timezone()),
@@ -203,7 +202,6 @@ public class CampaignMapper {
         }
         return new ScheduleConfig(
             spec.getStartDate(),
-            spec.getEndDate(),
             spec.getStartTime(),
             spec.getEndTime(),
             spec.getTimezone(),
@@ -230,7 +228,6 @@ public class CampaignMapper {
         }
         return new ScheduleSpec(
             spec.getStartDate(),
-            spec.getEndDate(),
             spec.getStartTime(),
             spec.getEndTime(),
             spec.getTimezone(),

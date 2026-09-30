@@ -612,7 +612,7 @@ class VoiceBlastDailyDialLimitPostgresIntegrationTest {
             callSessionRepository, callLegRepository, limitService,
                 new DailyAttemptSafetyService(dailyAttemptRepository, limitService,
                         new io.micrometer.core.instrument.simple.SimpleMeterRegistry()),
-                new PreDispatchFailureMapper());
+                new PreDispatchFailureMapper(), transactionTemplate(), new ExecutionScheduleCalculator());
 
         // (a) pre-acceptance failure: BUSY consumes nothing.
         UUID attemptA = nextAttempt(contact);
@@ -682,7 +682,7 @@ class VoiceBlastDailyDialLimitPostgresIntegrationTest {
             callSessionRepository, callLegRepository, limitService,
                 new DailyAttemptSafetyService(dailyAttemptRepository, limitService,
                         new io.micrometer.core.instrument.simple.SimpleMeterRegistry()),
-                new PreDispatchFailureMapper());
+                new PreDispatchFailureMapper(), transactionTemplate(), new ExecutionScheduleCalculator());
 
         transactionTemplate().executeWithoutResult(tx -> dialService.processDueAttempts());
 
@@ -747,7 +747,7 @@ class VoiceBlastDailyDialLimitPostgresIntegrationTest {
             callSessionRepository, callLegRepository, limitService,
                 new DailyAttemptSafetyService(dailyAttemptRepository, limitService,
                         new io.micrometer.core.instrument.simple.SimpleMeterRegistry()),
-                new PreDispatchFailureMapper());
+                new PreDispatchFailureMapper(), transactionTemplate(), new ExecutionScheduleCalculator());
 
         transactionTemplate().executeWithoutResult(tx -> dialService.processDueAttempts());
 

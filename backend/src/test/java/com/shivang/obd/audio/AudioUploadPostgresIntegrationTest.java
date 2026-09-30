@@ -210,6 +210,14 @@ class AudioUploadPostgresIntegrationTest {
         campaign.setStatus(status);
         campaign.setContentMode(ContentMode.AUDIO);
         campaign.setAudioAssetId(audioAssetId);
+        // VB-7C.1 carry-over: readiness requires an execution timezone for every
+        // campaign, with no fallback. This fixture predates that rule and set no
+        // schedule at all, so PG-4 saw an extra readiness reason that had
+        // nothing to do with audio. A windowless UTC schedule is always
+        // eligible, which keeps these tests testing what they are named for:
+        // audio asset readiness.
+        campaign.setSchedule(new com.shivang.obd.campaign.ScheduleSpec(
+            null, null, null, "UTC", null, null));
         // Embedded retry policy: JPA inserts all columns, so the NOT NULL
         // retry fields must be set explicitly (0 = no retries).
         campaign.setRetryPolicy(new com.shivang.obd.campaign.RetryPolicySpec(

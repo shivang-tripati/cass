@@ -133,4 +133,53 @@ public interface VoiceBlastDailyUsageRepository
                            @Param("contactId") UUID contactId,
                            @Param("didId") UUID didId,
                            @Param("usageDate") LocalDate usageDate);
+
+    /**
+     * VB-8G: records a provider-accepted dial whose pre-dial hold no longer
+     * exists, because the transaction that granted it rolled back after
+     * FreeSWITCH had already accepted the call.
+     *
+     * <p>Deliberately the one operation in this repository with <b>no</b> guard,
+     * and both absences are load-bearing:
+     *
+     * <ul>
+     *   <li><b>No {@code reserved_count > 0} guard</b> (unlike
+     *       {@link #confirmUsed}). There is no hold to convert, so that guard
+     *       would silently drop the usage and leave the bucket permanently one
+     *       behind reality - the exact defect this operation exists to close.
+     *       It also cannot corrupt the hold count, because {@code
+     *       reserved_count} is never touched here.</li>
+     *   <li><b>No {@code < :effectiveLimit} guard</b> (unlike
+     *       {@link #reserve}). Admission is the only operation allowed to
+     *       refuse a slot, and this is not an admission: the provider already
+     *       accepted the call, so the quota cannot retroactively un-place it.
+     *       Refusing here would erase a factual acceptance and permit further
+     *       dials. The bucket is therefore allowed to exceed the limit, and
+     *       subsequent admissions observe that and correctly stop.</li>
+     * </ul>
+     *
+     * <p>Idempotency is <b>not</b> this statement's job. It is deliberately a
+     * plain unconditional increment, because a guarded increment cannot
+     * distinguish "first reconciliation" from "duplicate event". The
+     * exactly-once guarantee comes from the caller inserting the
+     * {@code UNIQUE (call_attempt_id)} ledger row first
+     * ({@code DailyDialLimitService.reconcileRecoveredAcceptance}); only the
+     * worker that wins that insert ever reaches this method.
+     *
+     * <p>Row-locked like its siblings, so concurrent recoveries for the same
+     * bucket serialise, and a concurrent admission's
+     * {@code reserved_count + used_count} check observes the reconciled usage.
+     *
+     * @return 1 iff the bucket row existed and was counted
+     */
+    @Modifying
+    @Query(value = "UPDATE voice_blast_daily_usage "
+            + "SET used_count = used_count + 1, updated_at = now() "
+            + "WHERE tenant_id = :tenantId AND contact_id = :contactId "
+            + "AND did_id = :didId AND usage_date = :usageDate",
+            nativeQuery = true)
+    int countRecoveredUsed(@Param("tenantId") UUID tenantId,
+                           @Param("contactId") UUID contactId,
+                           @Param("didId") UUID didId,
+                           @Param("usageDate") LocalDate usageDate);
 }

@@ -83,15 +83,63 @@ public class OutboundDialService {
      * cannot be mistaken for dispatched contact outcomes.
      */
     private final PreDispatchFailureMapper preDispatchFailureMapper;
+    /** VB-8J: authoritative calling-window arithmetic for the dispatch gate. */
 
     /**
-     * Processes all QUEUED attempts that are due for execution.
-     * <p>
-     * Safe to call repeatedly — idempotent by design.
+     * VB-8D: the explicit transaction boundary for the dial step.
+     *
+     * <p>Deliberately a template rather than an annotation, because this is the
+     * one place where the correct boundary is <em>not</em> the method boundary:
+     * the batch loop must run with no transaction at all, while each attempt's
+     * work - including the external dial - must run inside exactly one. That
+     * cannot be expressed with an annotation on a method owning both.
+     */
+    private final org.springframework.transaction.support.TransactionTemplate txTemplate;
+    /** VB-8J: authoritative calling-window arithmetic for the dispatch gate. */
+    private final ExecutionScheduleCalculator scheduleCalculator;
+
+    /**
+     * VB-8D: dispatches every due attempt.
+     *
+     * <h2>Why this method is deliberately NOT {@code @Transactional}</h2>
+     *
+     * <p>It used to be one transaction spanning the whole platform-wide batch,
+     * including {@code dialer.dial(...)} network I/O. That was unsafe in a way
+     * no care inside the method could fix: one unexpected {@code RuntimeException}
+     * from a <em>later</em> attempt rolled the batch back, erasing the provider
+     * call id, session, leg, capacity reservation and safety consumption of calls
+     * FreeSWITCH had already accepted. Nothing in the database then referenced
+     * those live channels, the ESL hangup could not correlate them, and the
+     * attempts became {@code QUEUED} again - so the next tick dialled the same
+     * contacts twice.
+     *
+     * <p>The unit of work is now <b>one attempt</b>, in explicit stages:
+     *
+     * <ol>
+     *   <li><b>claim</b> - a single conditional {@code QUEUED -> IN_PROGRESS}
+     *       UPDATE, committed on its own. Once committed the attempt is no longer
+     *       selectable, so no later failure anywhere can make it dialable again.
+     *       This is what makes duplicate dispatch impossible.</li>
+     *   <li><b>dispatch</b> - eligibility, routing, both safety admissions,
+     *       capacity reservation and the external dial, in one transaction scoped
+     *       to this attempt alone. Another attempt's failure cannot reach it; this
+     *       attempt's own failure can only strand itself, which
+     *       {@link StaleCallReconciler} already resolves.</li>
+     *   <li><b>recover</b> - a failure is turned into a deterministic terminal or
+     *       requeued state in its own transaction, so the batch never stops on one
+     *       poisoned row.</li>
+     * </ol>
+     *
+     * <p>The ordering is honest about external telephony. The claim commits
+     * <em>before</em> the dial, and the attempt's provider evidence is written in
+     * the dispatch transaction. Neither direction is pretended to be atomic with
+     * PostgreSQL; what is guaranteed is that a dispatch can never be silently
+     * forgotten and re-attempted.
+     *
+     * <p>Safe to call repeatedly - idempotent by design.
      *
      * @return number of attempts processed
      */
-    @Transactional
     public int processDueAttempts() {
         List<CallAttempt> dueAttempts = attemptRepository
             .findByStatusAndScheduledAtBeforeAndDeletedAtIsNull(
@@ -103,8 +151,17 @@ public class OutboundDialService {
 
         int processed = 0;
         for (CallAttempt attempt : dueAttempts) {
-            if (processAttempt(attempt)) {
-                processed++;
+            // VB-8D: per-ITEM isolation, not merely per-step. One poisoned row
+            // must never stop the rest of the batch. RuntimeException only, so a
+            // genuine JVM fault still propagates rather than being masked.
+            try {
+                if (processOneAttempt(attempt)) {
+                    processed++;
+                }
+            } catch (RuntimeException e) {
+                log.error("Due attempt {} failed unexpectedly; continuing with the remaining "
+                        + "due attempts of this tick", attempt.getId(), e);
+                recoverFailedAttempt(attempt.getId(), attempt.getTenantId());
             }
         }
 
@@ -113,14 +170,182 @@ public class OutboundDialService {
     }
 
     /**
-     * Processes a single attempt by invoking the dialer.
+     * VB-8D: claim, then dispatch, as two independently committed units.
      *
-     * @return true if attempt was processed, false if skipped (e.g., not QUEUED)
+     * @return true when this worker both claimed and processed the attempt
      */
-    private boolean processAttempt(CallAttempt attempt) {
-        if (attempt.getStatus() != CallAttemptStatus.QUEUED) {
+    private boolean processOneAttempt(CallAttempt candidate) {
+        UUID attemptId = candidate.getId();
+        UUID tenantId = candidate.getTenantId();
+
+        // VB-8J: the calling window is checked BEFORE the claim, so a closed
+        // window costs one scheduled_at write instead of a claim/requeue cycle
+        // per tick per attempt. Nothing is consumed - no VB-6C hold, no VB-6D.3
+        // attempt, no capacity - and the attempt stays QUEUED and unfinished,
+        // so a window closing never completes an execution.
+        if (deferOutsideCallingWindow(candidate)) {
             return false;
         }
+
+        Boolean claimed = txTemplate.execute(status -> attemptRepository.claimForDispatch(
+                attemptId, tenantId,
+                CallAttemptStatus.QUEUED, CallAttemptStatus.IN_PROGRESS,
+                Instant.now()) == 1);
+        if (!Boolean.TRUE.equals(claimed)) {
+            // Another worker won the claim, or the row already moved on. Either
+            // way this worker must not touch it.
+            log.debug("Attempt {} not claimable (already claimed or no longer due)", attemptId);
+            return false;
+        }
+
+        return Boolean.TRUE.equals(
+                txTemplate.execute(status -> dispatchClaimedAttempt(attemptId, tenantId)));
+    }
+
+    /**
+     * VB-8J: defers an attempt that is due by timestamp but not inside the
+     * execution's frozen calling window.
+     *
+     * <p>Configuration comes from the execution snapshot, never the live
+     * campaign, so a window edited after the freeze cannot change what an
+     * existing execution is allowed to dial.
+     *
+     * @return true when the attempt was deferred and must not be dispatched
+     */
+    private boolean deferOutsideCallingWindow(CallAttempt attempt) {
+        var execution = executionRepository
+                .findByIdAndDeletedAtIsNull(attempt.getExecutionId()).orElse(null);
+        if (execution == null) {
+            return false; // The dispatch path reports the missing execution.
+        }
+        ScheduleSpec schedule;
+        try {
+            schedule = runtimeConfigResolver.resolve(execution).schedule();
+        } catch (RuntimeException unresolvable) {
+            log.error("Execution {} configuration could not be resolved for the calling-window "
+                    + "check; leaving the attempt for the dispatch path to report", execution.getId());
+            return false;
+        }
+        Instant now = Instant.now();
+        if (scheduleCalculator.isWithinWindow(schedule, now)) {
+            return false;
+        }
+        var nextOpen = scheduleCalculator.nextWindowOpen(schedule, now);
+        if (nextOpen.isEmpty()) {
+            return false; // No window configured, so it is always open.
+        }
+        txTemplate.executeWithoutResult(status -> {
+            CallAttempt queued = attemptRepository
+                    .findByIdAndDeletedAtIsNull(attempt.getId()).orElseThrow();
+            if (queued.getStatus() != CallAttemptStatus.QUEUED) {
+                return;
+            }
+            queued.setScheduledAt(nextOpen.get());
+            attemptRepository.saveAndFlush(queued);
+        });
+        log.info("Calling window closed for execution {} - attempt {} deferred to {}",
+                execution.getId(), attempt.getId(), nextOpen.get());
+        return true;
+    }
+
+    /**
+     * VB-8D: turns an unexpected failure into a deterministic state, so the
+     * attempt can neither be re-dispatched nor disappear without a record.
+     *
+     * <p>The claim already committed IN_PROGRESS, which is exactly the
+     * stranded-dispatch shape StaleCallReconciler handles. Recording it here
+     * surfaces the failure on this tick instead of waiting for the sweeper.
+     */
+    private void recoverFailedAttempt(UUID attemptId, UUID tenantId) {
+        try {
+            txTemplate.executeWithoutResult(status -> attemptRepository
+                    .findByIdAndTenantIdAndDeletedAtIsNull(attemptId, tenantId)
+                    .ifPresent(attempt -> {
+                        if (attempt.getStatus() == CallAttemptStatus.IN_PROGRESS) {
+                            // CANCELLED, not FAILED. FAILED is the only status the
+                            // retry step looks at, and an internal processing fault
+                            // must not silently consume campaign retry budget or
+                            // become a retry loop. CANCELLED is already terminal, so
+                            // reconcileExecution still settles the execution. The code
+                            // is descriptive text rather than a new CallFailureCode
+                            // constant, matching how the dial path already persists
+                            // eligibility codes - no retry taxonomy is invented here.
+                            attempt.setStatus(CallAttemptStatus.CANCELLED);
+                            attempt.setFailureCode("ATTEMPT_PROCESSING_FAILED");
+                            attempt.setFailureReason(
+                                    "Attempt processing failed unexpectedly; see scheduler log");
+                            attempt.setCompletedAt(Instant.now());
+                            attemptRepository.save(attempt);
+                        }
+                    }));
+        } catch (RuntimeException recoveryFailure) {
+            // Nothing further can be done; the attempt stays IN_PROGRESS and
+            // StaleCallReconciler remains the backstop.
+            log.error("Could not record recovery for attempt {}", attemptId, recoveryFailure);
+        }
+    }
+
+    /**
+     * VB-8D: dispatches one already-claimed attempt, inside its own transaction.
+     *
+     * <p>Fails closed on a terminal execution before any dispatch work: nothing
+     * below runs, so no eligibility check, no routing, no safety admission, no
+     * capacity reservation and no telephony side effect occur.
+     */
+    private boolean dispatchClaimedAttempt(UUID attemptId, UUID tenantId) {
+        // Re-read inside the dispatch transaction rather than reusing the row the
+        // selection returned: the claim has since changed it, and that committed
+        // claim is what proves this worker owns the attempt.
+        CallAttempt attempt = attemptRepository
+                .findByIdAndTenantIdAndDeletedAtIsNull(attemptId, tenantId)
+                .orElse(null);
+        if (attempt == null) {
+            log.warn("Claimed attempt {} vanished before dispatch", attemptId);
+            return false;
+        }
+        if (attempt.getStatus() != CallAttemptStatus.IN_PROGRESS) {
+            log.warn("Claimed attempt {} is no longer IN_PROGRESS (current: {}); skipping",
+                    attemptId, attempt.getStatus());
+            return false;
+        }
+
+        CampaignExecution execution = executionRepository
+                .findByIdAndDeletedAtIsNull(attempt.getExecutionId())
+                .orElse(null);
+        if (execution == null) {
+            markFailed(attempt, "EXECUTION_NOT_FOUND", "Execution no longer exists");
+            attemptRepository.save(attempt);
+            return true;
+        }
+        if (!execution.getStatus().acceptsDispatchWork()) {
+            // CANCELLED, not FAILED: FAILED is the only status the retry step
+            // looks at, and a retry for a finished execution is precisely what
+            // this guard exists to prevent. CANCELLED is terminal, so
+            // reconcileExecution still sees the execution as settled.
+            log.info("Attempt {} not dispatched: execution {} is {}",
+                    attemptId, execution.getId(), execution.getStatus());
+            attempt.setStatus(CallAttemptStatus.CANCELLED);
+            attempt.setFailureCode("EXECUTION_NOT_RUNNABLE");
+            attempt.setFailureReason("Execution is " + execution.getStatus()
+                    + "; no further dispatch is permitted");
+            attempt.setCompletedAt(Instant.now());
+            attemptRepository.save(attempt);
+            return true;
+        }
+
+        return dispatch(attempt);
+    }
+
+    /**
+     * VB-8D: the existing dispatch body, now receiving an already-claimed
+     * attempt.
+     *
+     * <p>Behaviour is unchanged from the previous monolithic processAttempt,
+     * except that the QUEUED guard and the IN_PROGRESS write are gone: the
+     * atomic claim already proved ownership and durably recorded it before any
+     * external I/O.
+     */
+    private boolean dispatch(CallAttempt attempt) {
 
         UUID attemptId = attempt.getId();
         log.debug("Processing dial for attempt {}", attemptId);
@@ -146,9 +371,21 @@ public class OutboundDialService {
         // consumes a VB-6C hold or a VB-6D.3 attempt and never produces a
         // failure that could be mistaken for a contact outcome. The attempt
         // stays QUEUED and keeps its attempt number, so it resumes naturally.
-        if (liveCampaign.getStatus() == CampaignStatus.PAUSED) {
-            log.info("Campaign {} is PAUSED - attempt {} not dispatched",
-                    liveCampaign.getId(), attemptId);
+        //
+        // VB-8H (F-8H-01): the gate was `== PAUSED`, which quietly assumed
+        // PAUSED is the only way to stop dispatch. It is not. SCHEDULED ->
+        // ARCHIVED is an operator-legal transition on a campaign that can own a
+        // RUNNING execution, and ARCHIVED is terminal by definition - yet its
+        // attempts kept being dialled, because nothing else consulted the
+        // campaign here. Gating on the single existing executable authority
+        // (SCHEDULED/RUNNING) instead fixes that and makes the gate fail
+        // closed for every non-executable state (PAUSED, ARCHIVED, DRAFT,
+        // COMPLETED, FAILED) rather than one hand-picked value. PAUSED
+        // behaviour is unchanged: it is not executable, so it is still gated,
+        // still before any budget, and still requeued.
+        if (!CampaignLifecyclePolicy.isExecutable(liveCampaign.getStatus())) {
+            log.info("Campaign {} is {} (not executable) - attempt {} not dispatched",
+                    liveCampaign.getId(), liveCampaign.getStatus(), attemptId);
             requeueAttempt(attempt);
             attemptRepository.save(attempt);
             return true;
@@ -187,12 +424,19 @@ public class OutboundDialService {
         try {
             destinationNumber = buildDestinationNumber(attempt);
         } catch (ResourceNotFoundException invalidContact) {
-            // VB-6B.1: the attempt's contact is missing, soft-deleted,
-            // foreign, or no longer in the execution's audience group. This
-            // is an attempt-specific PERMANENT failure (ContactIdentityService
-            // + audit §15): one invalid contact must never abort the due
-            // batch, never reach the provider, and never fall back to live
-            // campaign configuration.
+            // VB-6B.1 + VB-8B: the attempt's contact is missing, soft-deleted or
+            // foreign, and its phone number cannot be normalized. This is an
+            // attempt-specific PERMANENT failure (ContactIdentityService +
+            // audit §15): one invalid contact must never abort the due batch,
+            // never reach the provider, and never fall back to live campaign
+            // configuration.
+            //
+            // VB-8B correction: this comment used to say "no longer in the
+            // execution's audience group". It does not check group membership -
+            // buildDestinationNumber has no group predicate by design (see its
+            // Javadoc). Audience enforcement happens in CallEligibilityService,
+            // against the frozen contact group, and is deliberately skipped for
+            // whitelist-enforced campaigns.
             markFailed(attempt, CallFailureCode.CONTACT_INVALID.name(),
                     "Contact is no longer valid for dialing");
             attemptRepository.save(attempt);
@@ -218,10 +462,10 @@ public class OutboundDialService {
             return true;
         }
 
-        // Mark IN_PROGRESS before dialing (optimistic — dialer may fail fast)
-        attempt.setStatus(CallAttemptStatus.IN_PROGRESS);
-        attempt.setStartedAt(Instant.now());
-        attemptRepository.save(attempt);
+        // VB-8D: the attempt is ALREADY IN_PROGRESS with startedAt stamped.
+        // That transition was made durably by the atomic claim, in its own
+        // committed transaction, before any external I/O - which is precisely
+        // what stops a later failure from making this attempt dialable again.
 
         // VB-6C.1: the actual outbound DNID once routing selects the route —
         // declared here so the pre-acceptance failure path (dialer exception)

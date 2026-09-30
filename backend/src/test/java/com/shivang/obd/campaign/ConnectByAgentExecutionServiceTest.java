@@ -116,7 +116,7 @@ class ConnectByAgentExecutionServiceTest {
                         CAMPAIGN_ID, TENANT_A,
                         new CampaignConfigurationSnapshot(
                                 CampaignType.CONNECT_BY_AGENT, null, null, null, null, null,
-                                null, null, null, null, null, null, null,
+                                null, null, null, null, null, null,
                                 0, null, RetryStrategy.FIXED, null, null, null,
                                 typeConfig, false, null),
                         java.time.Instant.now()));
@@ -189,7 +189,7 @@ class ConnectByAgentExecutionServiceTest {
                         new CampaignConfigurationSnapshot(
                                 CampaignType.PLAYFILE, null, null, ContentMode.AUDIO,
                                 UUID.randomUUID(), null,
-                                null, null, null, null, null, null, null,
+                                null, null, null, null, null, null,
                                 0, null, RetryStrategy.FIXED, null, null, null,
                                 parse("{\"playfile\":{}}"), false, null),
                         java.time.Instant.now()));
@@ -210,7 +210,7 @@ class ConnectByAgentExecutionServiceTest {
                         new CampaignConfigurationSnapshot(
                                 CampaignType.DTMF, null, null, ContentMode.AUDIO,
                                 UUID.randomUUID(), null,
-                                null, null, null, null, null, null, null,
+                                null, null, null, null, null, null,
                                 0, null, RetryStrategy.FIXED, null, null, null,
                                 parse("{\"dtmf\": {\"expected\": \"1\", "
                                         + "\"action\": \"CONNECT_BY_AGENT\"}}"), false, null),

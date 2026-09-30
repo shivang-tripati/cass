@@ -19,6 +19,11 @@ import org.hibernate.type.SqlTypes;
  * explicit IANA identifier; the execution engine interprets the window
  * in this zone. All fields are optional until the campaign is configured
  * (activation requires a complete schedule).
+ *
+ * <p>There is no schedule end date. A campaign becomes eligible at its start
+ * date and stays eligible across every future calling window until its work is
+ * exhausted. Daily windows repeat; closing one defers unfinished work to the
+ * next valid window rather than ending the schedule.
  */
 @Getter
 @Setter
@@ -30,9 +35,6 @@ public class ScheduleSpec {
 
     @Column(name = "schedule_start_date")
     private LocalDate startDate;
-
-    @Column(name = "schedule_end_date")
-    private LocalDate endDate;
 
     @Column(name = "daily_start_time")
     private LocalTime startTime;

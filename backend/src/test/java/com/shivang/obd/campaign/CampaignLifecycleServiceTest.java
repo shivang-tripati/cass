@@ -35,8 +35,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 /**
- * Lifecycle transition rules: legal edges succeed, illegal and
- * engine-driven edges are rejected, activation gates on configuration.
+ * Lifecycle transition rules: legal edges succeed, illegal edges and edges
+ * targeting a reserved execution-fact are rejected, activation gates on
+ * configuration.
  */
 class CampaignLifecycleServiceTest {
 
@@ -117,15 +118,22 @@ class CampaignLifecycleServiceTest {
         }
 
         @Test
-        void pausedToRunningIsAManualEdge() {
+        void pausedToRunningIsRefusedBecauseRunningIsReserved() {
+            // VB-8J: this asserted PAUSED -> RUNNING was a legal manual edge, which
+            // was the VB-8H position. The decided model makes RUNNING a reserved
+            // execution-fact with no producer, so the edge is legal in the table
+            // but refused with the reason that matters.
             var paused = campaign(CampaignStatus.PAUSED);
             when(repository.findByIdAndTenantIdAndDeletedAtIsNull(paused.getId(), TENANT_A))
                 .thenReturn(Optional.of(paused));
-            when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            service.changeStatus(paused.getId(), new UpdateCampaignStatusRequest("RUNNING"));
+            assertThatThrownBy(() -> service.changeStatus(
+                paused.getId(), new UpdateCampaignStatusRequest("RUNNING")))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("reserved");
 
-            assertThat(paused.getStatus()).isEqualTo(CampaignStatus.RUNNING);
+            assertThat(paused.getStatus()).isEqualTo(CampaignStatus.PAUSED);
+            verify(repository, never()).save(any());
         }
 
         @Test
@@ -171,6 +179,13 @@ class CampaignLifecycleServiceTest {
 
         @Test
         void engineDrivenEdgesAreRejectedOnTheManualApi() {
+            // VB-8J supersedes the VB-8H position in both directions. VB-8H
+            // removed the rejection and made RUNNING operator-settable, on the
+            // reasoning that campaign status is control state. VB-8J keeps that
+            // reasoning but draws the consequence properly: RUNNING describes
+            // execution progress, so it is reserved rather than clickable. The
+            // old message ("performed by the execution engine") was false and no
+            // engine path exists; the new one says what is actually true.
             var scheduled = campaign(CampaignStatus.SCHEDULED);
             when(repository.findByIdAndTenantIdAndDeletedAtIsNull(scheduled.getId(), TENANT_A))
                 .thenReturn(Optional.of(scheduled));
@@ -178,8 +193,31 @@ class CampaignLifecycleServiceTest {
             assertThatThrownBy(() -> service.changeStatus(
                 scheduled.getId(), new UpdateCampaignStatusRequest("RUNNING")))
                 .isInstanceOf(ConflictException.class)
-                .hasMessageContaining("execution engine");
+                .hasMessageContaining("reserved")
+                .hasMessageContaining("executions");
+
+            assertThat(scheduled.getStatus()).isEqualTo(CampaignStatus.SCHEDULED);
             verify(repository, never()).save(any());
+        }
+
+        @Test
+        void runningTerminalEdgesAreAlsoReserved() {
+            // RUNNING -> COMPLETED / FAILED are legal in the table but refused,
+            // for the same reason. Nothing produces them, and a campaign must not
+            // be able to declare itself finished or failed by hand.
+            for (var target : new CampaignStatus[] {
+                    CampaignStatus.COMPLETED, CampaignStatus.FAILED}) {
+                var running = campaign(CampaignStatus.RUNNING);
+                when(repository.findByIdAndTenantIdAndDeletedAtIsNull(running.getId(), TENANT_A))
+                    .thenReturn(Optional.of(running));
+
+                assertThatThrownBy(() -> service.changeStatus(
+                    running.getId(), new UpdateCampaignStatusRequest(target.name())))
+                    .isInstanceOf(ConflictException.class)
+                    .hasMessageContaining("reserved");
+
+                assertThat(running.getStatus()).isEqualTo(CampaignStatus.RUNNING);
+            }
         }
 
         @Test

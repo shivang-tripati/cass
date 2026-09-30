@@ -179,7 +179,7 @@ class CampaignReadinessServiceTest {
     /** A window that is open all year, so no SCHEDULE_*_NOT_ELIGIBLE noise. */
     private static com.shivang.obd.campaign.ScheduleSpec wideOpenWindow(String timezone) {
         return new com.shivang.obd.campaign.ScheduleSpec(
-                LocalDate.of(2020, 1, 1), LocalDate.of(2099, 12, 31),
+                LocalDate.of(2020, 1, 1),
                 LocalTime.of(0, 0), LocalTime.of(23, 59),
                 timezone, new LinkedHashSet<>(Set.of(DayOfWeek.values())), null);
     }
@@ -192,7 +192,7 @@ class CampaignReadinessServiceTest {
      */
     private static com.shivang.obd.campaign.ScheduleSpec windowless(String timezone) {
         return new com.shivang.obd.campaign.ScheduleSpec(
-                null, null, null, null, timezone, null, null);
+                null, null, null, timezone, null, null);
     }
 
     private void register(CampaignEntity c) {

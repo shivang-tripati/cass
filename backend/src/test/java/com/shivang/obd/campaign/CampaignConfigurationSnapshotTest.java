@@ -34,7 +34,7 @@ class CampaignConfigurationSnapshotTest {
         campaign.setContentMode(ContentMode.AUDIO);
         campaign.setAudioAssetId(UUID.randomUUID());
         campaign.setSchedule(new ScheduleSpec(
-                LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31),
+                LocalDate.of(2026, 10, 1),
                 LocalTime.of(9, 0), LocalTime.of(17, 0),
                 "Asia/Kolkata", Set.of(java.time.DayOfWeek.MONDAY), null));
         campaign.setRetryPolicy(new RetryPolicySpec(3, 120, RetryStrategy.FIXED));

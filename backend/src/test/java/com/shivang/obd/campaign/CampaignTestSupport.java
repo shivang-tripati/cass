@@ -40,13 +40,13 @@ final class CampaignTestSupport {
 
     static void withSchedule(CampaignEntity campaign) {
         campaign.setSchedule(new ScheduleSpec(
-            LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30),
+            LocalDate.of(2026, 9, 1),
             LocalTime.of(10, 0), LocalTime.of(18, 0),
             "Asia/Kolkata", Set.of(DayOfWeek.MONDAY, DayOfWeek.FRIDAY), null));
     }
 
-    static ScheduleSpec scheduleSpec(LocalDate start, LocalDate end, String timezone) {
-        return new ScheduleSpec(start, end, LocalTime.of(10, 0), LocalTime.of(18, 0),
+    static ScheduleSpec scheduleSpec(LocalDate start, String timezone) {
+        return new ScheduleSpec(start, LocalTime.of(10, 0), LocalTime.of(18, 0),
             timezone, new LinkedHashSet<>(Set.of(DayOfWeek.WEDNESDAY)), null);
     }
 }

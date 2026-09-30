@@ -144,9 +144,12 @@ public class CampaignController {
     @Operation(
         summary = "Transition campaign lifecycle state",
         description = "Applies an explicit lifecycle transition (e.g. DRAFT -> SCHEDULED, "
-            + "SCHEDULED -> PAUSED, PAUSED -> RUNNING, any active state -> ARCHIVED). Illegal "
-            + "transitions and engine-driven transitions (SCHEDULED -> RUNNING, RUNNING -> "
-            + "COMPLETED/FAILED) are rejected with 409. Activating a DRAFT campaign requires "
+            + "SCHEDULED -> PAUSED, SCHEDULED -> DRAFT, any active state -> ARCHIVED). Illegal "
+            + "transitions, and transitions whose target is a reserved state (RUNNING, COMPLETED "
+            + "or FAILED), are rejected with 409. The reserved states describe execution outcomes "
+            + "rather than campaign configuration and nothing produces them, because campaign "
+            + "status is never derived from executions; read execution progress and outcome from "
+            + "the campaign's executions instead. Activating a DRAFT campaign requires "
             + "complete, coherent configuration including a timezone-valid schedule. Requires "
             + "the CAMPAIGN_EXECUTE capability on the owning tenant.",
         security = @SecurityRequirement(name = "bearerAuth")
@@ -156,7 +159,7 @@ public class CampaignController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Missing CAMPAIGN_EXECUTE capability for the owning tenant")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Not found or outside caller boundary")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Illegal or engine-driven lifecycle transition")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Illegal lifecycle transition, or a transition targeting a reserved state (RUNNING, COMPLETED, FAILED)")
     @PatchMapping("/{id}/status")
     public ApiResponse<CampaignResponse> changeStatus(
         @PathVariable UUID id, @Valid @RequestBody UpdateCampaignStatusRequest request
@@ -214,7 +217,7 @@ public class CampaignController {
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Missing CAMPAIGN_EXECUTE capability for the owning tenant")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Not found or outside caller boundary")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Duplicate idempotency key for different campaign")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Duplicate idempotency key for different campaign / campaign already has an execution in progress")
     @PostMapping("/{id}/executions")
     public ResponseEntity<ApiResponse<CampaignExecutionResponse>> execute(
             @PathVariable UUID id, @Valid @RequestBody ExecuteCampaignRequest request) {
@@ -257,17 +260,22 @@ public class CampaignController {
     @Operation(
         summary = "Create a call attempt",
         description = "Queues a call attempt for a specific contact within a campaign execution. "
-            + "Validates execution/campaign/contact/DID ownership and availability. "
-            + "Returns QUEUED attempt. Actual dialing is performed by the future execution engine. "
+            + "The request identifies the operation (which execution, which contact, which attempt "
+            + "number) but never redefines the execution's configuration: didId, scheduledAt and the "
+            + "permitted attempt number all come from the execution's immutable configuration "
+            + "snapshot, so a campaign edit after execution creation cannot change what this call "
+            + "dials. The contact must belong to the snapshot's contact group. The execution must be "
+            + "runnable (REQUESTED or RUNNING), so a terminal execution cannot be resurrected. "
+            + "Returns a QUEUED attempt. Actual dialing is performed by the execution engine. "
             + "Requires CAMPAIGN_EXECUTE capability.",
         security = @SecurityRequirement(name = "bearerAuth")
     )
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "201", description = "Call attempt queued")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Validation failed / invalid ownership")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400", description = "Validation failed / invalid ownership / contact outside the execution's frozen contact group")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "401", description = "Not authenticated")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403", description = "Missing CAMPAIGN_EXECUTE capability")
     @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "Not found or outside caller boundary")
-    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Duplicate attempt for same execution/contact/attemptNumber")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "409", description = "Duplicate attempt for the same execution/contact/attemptNumber, a terminal execution, a didId that disagrees with the frozen configuration, or an attempt number beyond the frozen retry policy")
     @PostMapping("/{campaignId}/executions/{executionId}/attempts")
     public ResponseEntity<ApiResponse<CallAttemptResponse>> createAttempt(
             @PathVariable UUID campaignId,

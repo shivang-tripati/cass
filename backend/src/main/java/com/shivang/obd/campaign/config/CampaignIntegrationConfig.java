@@ -49,20 +49,32 @@ import tools.jackson.databind.node.ObjectNode;
  * configuration here receives no HTTP traffic from this platform, because
  * nothing here can send any.
  *
- * <h2>Snapshot participation (OD-3, deferred)</h2>
+ * <h2>Snapshot participation</h2>
  *
- * <p>Deliberately still excluded from
- * {@link com.shivang.obd.campaign.CampaignConfigurationSnapshot}, for the same
- * reason as before and now for a stronger one: <b>nothing consumes this
- * configuration</b>, so freezing it would record an execution's intent to
- * deliver web-hooks — semantics no execution currently has.
+ * <p><b>Frozen since VB-7C.3.</b> This configuration is now part of
+ * {@link com.shivang.obd.campaign.CampaignConfigurationSnapshot}, captured at
+ * execution creation in its canonical validated form and read back through
+ * {@code CampaignRuntimeConfig.asIntegrationConfig()}.
  *
- * <p>The exclusion is a live hazard and is recorded as such. The moment the first
- * consumer appears, this configuration <b>must</b> be added to the snapshot in
- * the same phase, exactly as VB-6A did for retry and schedule. Shipping a
- * consumer while leaving the exclusion in place would let an operator edit a
- * campaign's endpoint and silently change the behaviour of an already-running
- * execution — the precise failure the immutable snapshot exists to prevent.
+ * <p>VB-7C.2 had deliberately excluded it, because nothing consumed it yet -
+ * freezing it would have recorded an execution's intent to deliver webhooks,
+ * semantics no execution then had. That exclusion was a live hazard: the moment
+ * a consumer appeared, this configuration had to be added in the same phase,
+ * exactly as VB-6A did for retry and schedule. VB-7C.3 closed the boundary
+ * early instead, before VB-8A execution work, so the first delivery or
+ * reporting phase inherits an already-safe snapshot.
+ *
+ * <p>Freezing changed nothing about whether any of this is acted upon. As
+ * above: no delivery, no signing, no retry, no report runtime. An execution now
+ * carries a frozen <em>copy</em> of this configuration that no code reads yet,
+ * which is exactly the point - the copy cannot drift, so the future consumer
+ * cannot be surprised by a mid-run campaign edit.
+ *
+ * <p>Absence is preserved, not normalised. A campaign that configured no
+ * integration block freezes as SQL NULL and reads back as
+ * {@code Optional.empty()}, which stays distinguishable from an explicitly
+ * defaulted {@code enabled=false} / {@code FULL} block. Collapsing the two would
+ * erase a real fact before any consumer could observe it.
  *
  * <h2>On-disk shape</h2>
  *
