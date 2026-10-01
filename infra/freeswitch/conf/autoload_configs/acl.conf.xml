@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase B live FreeSWITCH environment
+  Network ACLs.
+
+  Purpose: this is a PRIVATE DEVELOPMENT SIP environment. Nothing here
+  should ever be reachable from the public internet.
+
+  The stock acl.conf.xml defines only the "lan" and "domains" lists and
+  relies on FreeSWITCH's auto-generated lists (rfc1918.auto, nat.auto,
+  localnet.auto, loopback.auto), which are derived from the interfaces the
+  process sees. Inside a container those auto lists resolve from a single
+  synthetic eth0, which makes the effective policy an accident of the
+  Docker network numbering. This file replaces that with an explicit,
+  reviewable policy.
+
+  NOTE: replacing this file removes the stock "domains" list, so no
+  configuration may reference it. infra/freeswitch/conf/sip_profiles/
+  (which does replace the stock profiles) references only obd-dev-acl.
+
+  Docker bridge networks are allocated from 172.17.0.0/16 upwards, so
+  172.16.0.0/12 covers both the default bridge and compose-created
+  networks (obd-network, obd-telephony, ...).
+-->
+<configuration name="acl.conf" description="OBD Phase B Network Lists">
+
+  <network-lists>
+
+    <!--
+      obd-dev-acl - the only ACL referenced by this environment.
+      Loopback plus all RFC1918 private space. Anything else is DENIED.
+    -->
+    <list name="obd-dev-acl" default="deny">
+      <node type="allow" cidr="127.0.0.1/32"/>
+      <node type="allow" cidr="::1/128"/>
+      <node type="allow" cidr="10.0.0.0/8"/>
+      <node type="allow" cidr="172.16.0.0/12"/>
+      <node type="allow" cidr="192.168.0.0/16"/>
+    </list>
+
+    <!--
+      Retained for the stock directory/dialplan, which still reference
+      $${domain}. Read-only in practice: it grants nothing by address.
+    -->
+    <list name="domains" default="deny">
+      <node type="allow" domain="$${domain}"/>
+    </list>
+
+  </network-lists>
+
+</configuration>

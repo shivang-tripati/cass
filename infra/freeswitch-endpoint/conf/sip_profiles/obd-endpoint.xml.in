@@ -1,0 +1,131 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase C: SIP profile for a local SIP test endpoint.
+
+  TEMPLATE - rendered at container start by infra/freeswitch-endpoint/scripts/entrypoint.sh.
+
+  This is the whole "softphone". Everything about it is deliberately explicit,
+  because the point of Phase C is to know exactly what the platform switch is
+  really talking to:
+
+    * ONE profile, named obd-endpoint, bound to 0.0.0.0 on 5060. It replaces
+      the image's stock internal/external profiles, so the endpoint has no
+      stock trunk, no stock IPv6 profile and no stock websocket binding to
+      confuse a packet trace. (Replacing the stock list is also how the stock
+      IPv6 profiles that bind [::1]:5060 were removed on the platform switch -
+      see 13-TROUBLESHOOTING.md.)
+
+    * auth-calls is false: the platform switch calls this endpoint WITHOUT
+      digest credentials, because an endpoint is not a subscriber. Registration
+      the other way - this endpoint registering to the platform - is what
+      carries credentials, and that is the gateway below.
+
+    * context is obd-endpoint, defined in dialplan/obd-endpoint.xml. It answers,
+      emits a known DTMF sequence, waits, and hangs up. Nothing else.
+
+    * sip-ip and rtp-ip are left UNSET on purpose. Setting sip-ip pins the
+      address advertised in Contact, and setting rtp-ip pins the address
+      advertised in SDP; pinning either to 0.0.0.0 would tell the far end to
+      send media to 0.0.0.0, which is unroutable. Left unset, the endpoint
+      advertises the container address, which the platform switch can reach
+      because they share the obd-telephony network.
+
+  EVERY <param> MUST SIT INSIDE <settings>
+  Observed in Phase C: with the parameters written directly under <profile>,
+  mod_sofia loaded the profile, found it in the compiled configuration, and
+  then refused to start it:
+
+      [ERR] sofia.c:4567 No Settings, check the new config!
+
+  The failure is quiet in the worst way - FreeSWITCH starts, reports UP, has
+  healthy ESL, and the endpoint simply never listens on any SIP port. A port
+  check or a packet trace is the only thing that reveals it.
+
+  THE DTMF PARAMETERS ARE NOT DECORATION
+  rfc2833-pt pins the RTP payload type used for RFC 4733 in-band DTMF events.
+  It MUST match the platform switch's value (101 there, and 101 here) or the
+  two ends negotiate DTMF on different payload types and the tones are never
+  decoded - while SIP signalling looks perfectly healthy. liberal-dtmf and
+  dtmf-duration mirror the platform so an event that is generated on one side
+  is decoded identically on the other.
+
+  THE GATEWAY IS HOW THIS ENDPOINT REGISTERS
+  A FreeSWITCH instance becomes a SIP client by configuring a gateway with
+  register=true. That produces a real REGISTER, a real 401 digest challenge
+  and a real 200 OK against the platform switch - i.e. this endpoint proves the
+  same registration flow a softphone would, from the other direction.
+
+  realm and proxy are set to the platform switch's ADDRESS, not its network
+  alias. This matters and was learned the hard way: the platform switch pins its
+  authentication realm to its own domain, which is its container address, and
+  FreeSWITCH files registrations as user@realm. Registering via the alias
+  "freeswitch" would put the alias in the To header, and the realm - and
+  therefore the registration key - would become "freeswitch", which is not a
+  domain the platform switch knows. The entrypoint resolves the address at
+  start-up so this stays correct across container recreates.
+
+  Note <gateways> is a child of <profile>, NOT of the profile's <settings> and
+  not of sofia.conf.xml. mod_sofia resolves the path
+  sofia.conf -> profiles -> profile[@name] -> gateways -> gateway, so a
+  gateways block anywhere else compiles without error and is silently ignored.
+
+  caller-id-in-from is true so the platform switch sees the endpoint as a real
+  peer with an identity rather than an anonymous one.
+-->
+<profile name="obd-endpoint">
+
+  <settings>
+    <param name="debug" value="0"/>
+    <param name="sip-trace" value="no"/>
+    <param name="sip-capture" value="no"/>
+
+    <param name="sip-port" value="5060"/>
+    <param name="listen-ip" value="0.0.0.0"/>
+
+    <param name="dialplan" value="XML"/>
+    <param name="context" value="obd-endpoint"/>
+
+    <!-- An endpoint is called without credentials; it authenticates itself
+         when it registers, via the gateway below. -->
+    <param name="auth-calls" value="false"/>
+    <param name="auth-subscriptions" value="false"/>
+    <param name="challenge-realm" value="$${domain}"/>
+
+    <!-- Codecs: PCMU first, so the platform switch's outbound-codec-prefs
+         match on the first choice and the SDP stays predictable. -->
+    <param name="inbound-codec-prefs" value="PCMU,PCMA"/>
+    <param name="outbound-codec-prefs" value="PCMU,PCMA"/>
+
+    <!-- Must equal the platform switch's rfc2833-pt (101), or in-band DTMF
+         is negotiated on two different payload types and never decoded. -->
+    <param name="rfc2833-pt" value="101"/>
+    <param name="liberal-dtmf" value="true"/>
+    <param name="dtmf-duration" value="2000"/>
+
+    <param name="inbound-codec-negotiation" value="generous"/>
+    <param name="rtp-timer-name" value="soft"/>
+
+    <!-- Defence in depth, same ACL as the platform switch. -->
+    <param name="apply-inbound-acl" value="obd-dev-acl"/>
+  </settings>
+
+  <gateways>
+    <gateway name="platform-switch">
+      <param name="proxy" value="@@PLATFORM_PROXY@@"/>
+      <param name="realm" value="@@PLATFORM_REALM@@"/>
+
+      <param name="register" value="true"/>
+      <param name="register-transport" value="udp"/>
+      <param name="register-retry-interval" value="30"/>
+      <param name="register-max-attempts" value="0"/>
+      <param name="expires" value="300"/>
+
+      <param name="username" value="@@EXTENSION@@"/>
+      <param name="password" value="@@SIP_PASSWORD@@"/>
+
+      <param name="caller-id-in-from" value="true"/>
+      <param name="outbound-codec-prefs" value="PCMU"/>
+    </gateway>
+  </gateways>
+
+</profile>

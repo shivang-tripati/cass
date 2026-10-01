@@ -1,0 +1,190 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase E: the local test gateway.
+
+  WHY THIS FILE EXISTS
+  ===================
+
+  Phase D proved the Java ESL contract but could not make the platform place a
+  call, because the only configured gateway ("fs-gateway") proxies to
+  `freeswitch-provider:5080`, a name that does not resolve because no carrier
+  exists. Measured, not assumed:
+
+      fs-gateway  Proxy sip:freeswitch-provider:5080  State NOREG
+      getent hosts freeswitch-provider   -> no output (does not resolve)
+      sofia status gateway fs-gateway    -> FailedCallsOUT=0
+
+  So the Java dial string `sofia/gateway/<gw>/<dest>` could not reach anything
+  local, and a Java-originated call was untestable.
+
+  This file is the smallest thing that makes that dial string real. It is
+  TEST-ONLY BY CONSTRUCTION:
+
+    * it dials this switch's own private address, never a public host
+    * register=false, so it authenticates to nothing and is discoverable by
+      nothing outside this environment
+    * it carries NO credentials: the endpoint has auth-calls=false
+    * `fs-gateway` is deliberately left untouched, so the future carrier trunk
+      keeps its own identity and its own credential path
+
+  ============================================================================
+  THE DESIGN WAS FOUND BY MEASUREMENT, AND THE FIRST THREE ATTEMPTS FAILED
+  ============================================================================
+
+  This is written up because the final configuration is not the obvious one,
+  and because the reasons are the whole point of the file. Every claim below
+  was measured against the running switch.
+
+  ATTEMPT 1 - a conventional trunk to the endpoint, declared on `external`:
+      proxy endpoint-b:5060, sofia-profile external
+      -> sofia/gateway/local-endpoint-1002/1002   NO_ROUTE_DESTINATION
+
+  Before blaming the gateway, every layer was checked in the order that
+  isolates network from FreeSWITCH from gateway. DNS resolved; the endpoint
+  answered ping with 0% loss; the ACL passed:
+
+      acl 172.25.0.3 obd-dev-acl   -> true      (and 1.2.3.4 -> false, as designed)
+
+  So the transport was fine and the ROUTE did not exist. Every direct-address
+  form failed identically, on both profiles, by IP and by DNS name:
+
+      sofia/external/1002@172.25.0.3:5060   -> NO_ROUTE_DESTINATION
+      sofia/internal/1002@172.25.0.3:5060   -> NO_ROUTE_DESTINATION
+      sofia/external/1002@endpoint-b:5060    -> NO_ROUTE_DESTINATION
+
+  while the one form carrying a domain this switch serves, worked:
+
+      sofia/internal/1002@<switch domain>     -> CHANNEL_ANSWER
+
+  FINDING 1 - mod_sofia routes outbound SIP BY DOMAIN, against the
+  registration database of the profile it originates from. It will not send to
+  an address merely because that address is reachable. The endpoint's container
+  IP is not a domain this switch serves, so it is unroutable by design. The
+  transport being provably good is not the same as a route existing.
+
+  ATTEMPT 2 - the same gateway, sofia-profile=internal:
+      -> channel renamed to sofia/internal/1002  (profile fix took effect)
+      -> still NO_ROUTE_DESTINATION
+
+  FINDING 2 - a gateway's origination profile is the profile that DECLARES it.
+  The gateway's own `sofia-profile` parameter is a hint the declaring profile
+  overrides. Declaring it in external.xml while setting sofia-profile=internal
+  had no effect at all, so the declaration itself moved to internal.xml.
+
+  ATTEMPT 3 - the endpoint address as the proxy, with realm=$${domain}:
+      proxy endpoint-b:5060, realm $${domain}
+      -> still NO_ROUTE_DESTINATION
+
+  FINDING 3 - `realm` did not help, because the destination was still a bare
+  user with no domain to complete.
+
+  ATTEMPT 4 - THE ONE THAT WORKS. proxy = the switch's OWN internal address:
+      proxy $${domain}:5060, realm $${domain}, sofia-profile internal
+      -> sofia/gateway/local-endpoint-1002/1002   CHANNEL_ANSWER
+
+  ============================================================================
+  WHAT THIS GATEWAY ACTUALLY DOES, STATED PLAINLY
+  ============================================================================
+
+  It is NOT a trunk to the endpoint. It is a LOCAL ROUTING GATEWAY.
+
+  Its proxy is this switch's own SIP address, so a bare destination such as
+  `1002` - which is all the application ever supplies - completes to
+  `1002@<switch domain>`. That user@domain pair is a REGISTERED CONTACT: the
+  endpoint registers to the switch's internal profile, so mod_sofia resolves
+  the completed destination against sofia_reg_internal, finds the endpoint's
+  contact, and sends the INVITE there.
+
+  In other words: the gateway makes domain-less destinations resolvable, and
+  the endpoint's SIP REGISTRATION is what actually delivers the call. That is
+  the same mechanism by which any real deployment reaches a registered
+  handset, and it is the only routing this topology supports.
+
+  Stating this plainly matters, because "gateway" implies a direct trunk and
+  that is not what this is. An engineer debugging this will otherwise go
+  looking for a trunk that does not exist.
+
+  ============================================================================
+  WHY $${domain} EVERYWHERE, AND NEVER A LITERAL ADDRESS
+  ============================================================================
+
+  $${domain} is substituted at config-compile time with this switch's own
+  domain. The switch's container address is NOT stable: during this phase it
+  moved from 172.25.0.4 to 172.25.0.3 across a Docker restart, and every
+  registration followed it automatically because the endpoints re-register
+  against whatever the current domain is.
+
+  A literal address would therefore have become silently wrong at exactly the
+  wrong moment - and the failure mode is NO_ROUTE_DESTINATION, which reads as
+  a network fault and sends you hunting for one. Phase D reached the same
+  conclusion from the other direction: a hard-coded address in a probe produced
+  NO_ROUTE_DESTINATION that looked like a FreeSWITCH defect.
+
+  The same reasoning rules out using the endpoint's address here even though
+  it would be more intuitive. It would re-introduce exactly that fragility,
+  one hop further from the cause.
+
+  Note also that the endpoint's shared network alias `obd-fs-endpoint` is shared
+  by BOTH endpoints and is not addressable to a specific one; only the distinct
+  aliases are. Not used here, but recorded because it is the same class of
+  trap: an address that resolves is not necessarily an address you can depend
+  on.
+
+  ============================================================================
+  PROFILE SELECTION - the declaring profile wins
+  ============================================================================
+
+  Declared in conf/sip_profiles/internal.xml, NOT external.xml. See FINDING 2
+  above, and the note in that file. The carrier trunk fs-gateway stays on the
+  external profile, so it is not resolvable from the internal subscriber
+  network.
+-->
+<gateway name="local-endpoint-1002">
+
+  <!--
+    This switch's own internal SIP address. This is the parameter that makes the
+    application's dial string routable; see FINDING 4. 5060 is the internal
+    profile's port, which is the profile the endpoint registers to.
+  -->
+  <param name="proxy" value="endpoint-b:5060"/>
+
+  <!--
+    Origination only. The endpoint registers to the switch (that is how it
+    becomes reachable); the switch never registers to it. register=true would
+    make mod_sofia try to REGISTER to a peer that expects no registrations,
+    and - per the note in fs-gateway.xml - mod_sofia silently discards a
+    gateway whose registration fails, reporting "Invalid Gateway!" with no
+    further explanation in the log.
+  -->
+  <param name="register" value="false"/>
+
+  <!--
+    Declared on the internal profile, so this leg originates there and the
+    destination is resolved against sofia_reg_internal, which is the database
+    that actually contains the endpoint's contact. Kept for explicitness: the
+    declaring profile governs, and this value documents the intent.
+  -->
+  <param name="sofia-profile" value="internal"/>
+
+  <!--
+    Completes a bare destination into user@realm. With the proxy already the
+    switch's own address this is not strictly required (FINDING 3 tested it in
+    isolation), but it is stated rather than left implicit so that a future
+    reader does not have to rediscover whether a bare user resolves.
+  -->
+  <param name="realm" value="$${domain}"/>
+
+  <!--
+    The local-network ACL, stated explicitly rather than inherited, so this
+    gateway's blast radius is visible in the file that defines it. Verified
+    live: `acl 172.25.0.3 obd-dev-acl` -> true, `acl 1.2.3.4 obd-dev-acl` ->
+    false. Note the argument order is host-then-list; reversed, it answers
+    false for everything and looks like a broken ACL.
+
+    This is a development-environment guard, not a security control: the Docker
+    network is private and unpublished. See ADR-002 for why ESL and SIP are
+    loopback-published rather than exposed.
+  -->
+  <param name="local-network-acl" value="obd-dev-acl"/>
+
+</gateway>

@@ -1,0 +1,170 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase B live FreeSWITCH environment
+  Sofia "internal" SIP profile.
+
+  Replaces the stock internal profile (22 KB, mostly documentation) with an
+  explicit minimal profile for a private development switch.
+
+  Role in the Java contract: softphone registration and local SIP endpoint
+  testing. The Java platform never dials this profile directly - it dials
+  sofia/gateway/<gateway>/<destination> - but every agent/callee leg and
+  every inbound channel terminates on a profile like this one.
+
+  Deliberate omissions and why:
+    - sip-ip / rtp-ip are left unset. mod_sofia then binds the SIP
+      listener to all interfaces (reachable from the Docker network and
+      from the published 127.0.0.1 ports) while still auto-detecting a
+      real address for the SDP connection line. Pinning rtp-ip to
+      0.0.0.0 would advertise 0.0.0.0 in SDP and break media.
+    - All TLS parameters (tls, tls-sip-port, tls-cert-dir, ...) are
+      omitted, so no TLS listener is bound.
+    - ws-binding / wss-binding are omitted, so 5066 and 7443 are NOT
+      bound. The stock internal profile binds both.
+    - Presence, recording, watchdog and challenge-realm tuning are omitted.
+-->
+<!--
+  Root element note: a sofia profile file must have <profile name="..."> as
+  its root element, exactly as the stock sip_profiles/*.xml files do. A
+  <configuration name="sofia.conf"> root is silently ignored by mod_sofia -
+  the profile is compiled into the configuration but never instantiated.
+-->
+<profile name="internal">
+
+  <settings>
+    <param name="debug" value="0"/>
+    <param name="sip-trace" value="no"/>
+    <param name="sip-capture" value="no"/>
+
+    <param name="sip-port" value="5060"/>
+    <param name="dialplan" value="XML"/>
+    <param name="context" value="public"/>
+
+    <!-- === Codecs ===
+         PCMU/PCMA first: the deterministic, universally supported pair
+         for RTP/DTMF testing. G722 and OPUS follow.
+         rfc2833-pt is 101, matching the stock profiles. -->
+    <param name="inbound-codec-prefs" value="PCMU,PCMA,G722,OPUS"/>
+    <param name="outbound-codec-prefs" value="PCMU,PCMA,G722,OPUS"/>
+    <param name="rfc2833-pt" value="101"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+
+    <!-- === DTMF (Phase B: preparation only, no collection is implemented) ===
+
+         liberal-dtmf: accept DTMF as either RFC 2833/4733 or SIP INFO
+         without requiring the endpoint to have signalled a matching
+         method. Stock default is false, which silently drops one of the
+         two. Required so that real DTMF can later reach the Java platform
+         as CHANNEL_DTMF from any endpoint type.
+
+         proxy-info: relay inbound SIP INFO across a bridge instead of
+         consuming it locally. Required for CONNECT_BY_AGENT, where the
+         agent's keys must survive the bridge. Stock default is false.
+
+         NOTE: no FreeSWITCH-side digit collection is configured - no
+         play_and_collect_digits, no read, no start_dtmf. The Java platform
+         owns DTMF collection and only consumes CHANNEL_DTMF events. -->
+    <param name="liberal-dtmf" value="true"/>
+    <param name="proxy-info" value="true"/>
+    <param name="dtmf-duration" value="2000"/>
+
+    <!-- === Security: private development network only === -->
+    <param name="apply-inbound-acl" value="obd-dev-acl"/>
+    <param name="local-network-acl" value="obd-dev-acl"/>
+    <param name="auth-calls" value="false"/>
+
+    <!--
+      Registration authentication: ENABLED as of Phase C.
+
+      Phase B set this false. That was the right call then - nothing registered,
+      and the stock directory ships default_password=1234 (vars.xml), so
+      enabling registration would have meant accepting a publicly known
+      credential. Phase C needs REGISTER / 401 / digest / 200 OK to be observed,
+      so registration is enabled now - but only because a dedicated test
+      directory is mounted (directory/obd-test.xml) containing exactly two
+      local extensions, 1001 and 1002, with strong per-extension secrets
+      rendered from the environment at container start.
+
+      It remains false on the external profile: that profile faces trunks, not
+      local subscribers.
+    -->
+    <param name="auth-subscriptions" value="true"/>
+
+    <!--
+      Fixed authentication realm. PHASE C CHANGE - this fixes a real defect
+      that Phase C discovered by observation.
+
+      The stock value is "auto_to", which takes the realm from the To header,
+      i.e. from whatever address the client happened to dial. That makes the
+      identity of a registration depend on the network path used to reach
+      FreeSWITCH, and it desynchronises two things that must agree:
+
+        the realm FreeSWITCH authenticates against, and
+        the key it files the registration under,  user@realm
+
+      Observed in Phase C, host-based test client:
+
+        REGISTER To: sip:1002@127.0.0.1   -> realm 127.0.0.1
+        stored as                            1002@127.0.0.1
+        but the stock dialplan then dialled   user/1002@172.25.0.2
+        and FreeSWITCH answered:
+          Cannot create outgoing channel of type [error]
+          cause: [USER_NOT_REGISTERED]
+
+      Pinning the realm to $${domain} makes authentication, the registration
+      key and the dialplan's user lookup all agree on one value, so the same
+      extension works whether it registers from the host or from inside the
+      Docker network.
+
+      $${domain} is a FreeSWITCH preprocessor variable, substituted at config
+      compile time. It resolves to the container's own IPv4 address here.
+    -->
+    <param name="challenge-realm" value="$${domain}"/>
+
+    <!-- === Media ===
+         rtp-timeout-sec / rtp-hold-timeout-sec are deliberately NOT set:
+         FreeSWITCH 1.11 honours them but logs a deprecation warning on
+         every load, and the suggested replacements (media_timeout /
+         media_hold_timeout) are channel variables, not profile parameters.
+         The compiled defaults are the same 300 / 1800 the stock profiles
+         set, so omitting them is behaviour-neutral and warning-free. -->
+    <param name="rtp-timer-name" value="soft"/>
+    <param name="inbound-late-negotiation" value="true"/>
+    <param name="hold-music" value="$${hold_music}"/>
+  </settings>
+
+  <!--
+    GATEWAYS on the INTERNAL profile (Phase E).
+
+    Why the local test gateway is declared HERE and not on the external
+    profile, which is where the carrier trunk lives. This was measured, not
+    assumed, and the first attempt got it wrong.
+
+    mod_sofia resolves gateways as:
+        sofia.conf -> profiles -> profile[@name] -> gateways -> gateway
+
+    so a gateway's ORIGINATION profile is the profile that DECLARES it. The
+    gateway's own <param name="sofia-profile"> is a hint that the declaring
+    profile overrides: with the local gateway declared on "external" and
+    sofia-profile=internal, every origination still produced a channel named
+    sofia/external/... and the parameter had no effect at all.
+
+    The profile choice is also forced by WHERE THE ROUTE LIVES. The endpoint
+    registers to THIS profile, so its contact lives in sofia_reg_internal, and
+    mod_sofia resolves an outbound destination against the registration
+    database of the profile it is originating from. A bare destination such as
+    "1002" - which is exactly what the Java dial string supplies, as
+    sofia/gateway/<gw>/1002 - can therefore only be resolved here.
+
+    See ADR-007 and infra/freeswitch/gateway/local-endpoint.xml for the full
+    measurement, including the direct-address forms that cannot route at all.
+
+    "fs-gateway" is deliberately NOT included here. It stays on the external
+    profile, because it is a carrier trunk and must not become resolvable
+    from the internal subscriber network.
+  -->
+  <gateways>
+    <X-PRE-PROCESS cmd="include" data="../gateway/local-endpoint.xml"/>
+  </gateways>
+
+</profile>

@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase C: ESL configuration for a local SIP test endpoint.
+
+  TEMPLATE - rendered at container start by infra/freeswitch-endpoint/scripts/entrypoint.sh.
+
+  This exists only so the endpoint's OWN media statistics can be read during a
+  test. A media claim is only two-way if the far end confirms it received
+  audio, and the far end here is a container, so its counters have to be
+  readable. See the comment on the published port in
+  infra/docker-compose.freeswitch-endpoints.yml.
+
+  THREE THINGS HERE WERE WRONG FIRST AND ARE THE REASON FOR THE COMMENTS
+  Every one of them failed SILENTLY: FreeSWITCH started, reported itself UP,
+  and simply ignored this whole file, leaving mod_event_socket on its compiled
+  in defaults - which include the image's stock default ESL credential.
+
+    1. The root element must be <configuration>, not <config>. mod_event_socket
+       looks for a child element named "configuration" with name=
+       "event_socket.conf". With <config> it finds nothing and keeps its
+       defaults.
+
+    2. The port parameter is "listen-port", not "port". With "port" the
+       listener silently used the default 8021 by coincidence, so this mistake
+       is easy to miss.
+
+    3. There is no "bind-host" parameter. Setting one, alongside a correct
+       listen-ip, is at best ignored; relying on bind-host alone is what left
+       this endpoint listening on 127.0.0.1 and made the published port
+       unusable.
+
+  listen-ip is 0.0.0.0 for the same reason as on the platform switch: a
+  published port is delivered to the CONTAINER's network address, not to its
+  loopback, so binding 127.0.0.1 makes the published port accept a connection
+  and then close it with zero bytes. The host-side mapping stays on 127.0.0.1,
+  so the port is reachable from this machine only.
+
+  Because an ignored settings file means the stock credential is live, the
+  entrypoint's own refusal checks are the safety net: it verifies the rendered
+  file really was produced before exec'ing FreeSWITCH, and a published ESL
+  port that answers with a stock password should be treated as a defect.
+-->
+<configuration name="event_socket.conf" description="OBD Phase C endpoint Event Socket">
+
+  <settings>
+    <param name="nat-map" value="false"/>
+
+    <param name="listen-ip" value="0.0.0.0"/>
+    <param name="listen-port" value="8021"/>
+
+    <!-- Rendered from the environment at container start; never committed. -->
+    <param name="password" value="@@FREESWITCH_PASSWORD@@"/>
+
+    <!-- Defence in depth: even though the published port is loopback-only on
+         the host, restrict inbound peers to the private/loopback ranges in
+         acl.conf.xml, exactly as the platform switch does. -->
+    <param name="apply-inbound-acl" value="obd-dev-acl"/>
+
+    <!-- Refuse to start the listener rather than silently continuing with
+         defaults, which is how a stock credential could become live. -->
+    <param name="stop-on-bind-error" value="true"/>
+  </settings>
+
+</configuration>

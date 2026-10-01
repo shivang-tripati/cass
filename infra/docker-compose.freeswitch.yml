@@ -1,0 +1,168 @@
+# OBD Platform - Phase B: live FreeSWITCH development environment.
+#
+# SCOPE: this file exists ONLY to stand up one FreeSWITCH instance (the
+# "platform" switch) so that the platform's existing ESL integration can be
+# validated against a real SIP/media engine. It intentionally contains
+# nothing else: no PostgreSQL, no Redis, no provider switch, no SIP tester,
+# no monitoring. Those belong to later phases, and the existing
+# infra/docker-compose.yml is left completely untouched.
+#
+# Run with:
+#   docker compose -f infra/docker-compose.freeswitch.yml up -d
+#
+# Compose resolves relative host paths against the PROJECT DIRECTORY, which
+# is the directory holding this file (infra/). So "../backend/data/audio"
+# is the repository's backend/data/audio regardless of your shell's cwd.
+#
+# Secrets: FREESWITCH_PASSWORD is read from infra/.env (git-ignored). There
+# is deliberately no default - compose fails to start if it is unset, and
+# the entrypoint refuses weak/placeholder values.
+
+name: obd-freeswitch
+
+services:
+  freeswitch:
+    image: ghcr.io/patrickbaus/freeswitch-docker:1.11.1
+    container_name: obd-freeswitch
+    hostname: freeswitch
+    restart: unless-stopped
+
+    # Replaces the image CMD (/usr/bin/freeswitch) so the ESL password can be
+    # rendered from the environment before FreeSWITCH starts. The script ends
+    # with "exec /usr/bin/freeswitch", so FreeSWITCH is still PID 1's process
+    # and receives SIGTERM directly.
+    #
+    # Invoked via /bin/sh rather than executed directly so that the script
+    # needs neither the executable bit nor a shebang, and so CRLF line
+    # endings in a Windows checkout cannot break it.
+    entrypoint: ["/bin/sh", "/opt/obd/entrypoint.sh"]
+
+    # SYS_NICE lets FreeSWITCH raise its own scheduling priority, which
+    # matters for RTP timing. Recommended by the image author.
+    cap_add:
+      - SYS_NICE
+
+    networks:
+      telephony:
+        aliases:
+          - freeswitch
+
+    environment:
+      # Required, no default. Consumed only by the entrypoint, which renders
+      # it into event_socket.conf.xml and then unsets it.
+      FREESWITCH_PASSWORD: ${FREESWITCH_PASSWORD:?set FREESWITCH_PASSWORD in infra/.env}
+      # Phase C: local SIP test endpoint secrets for extensions 1001 and 1002.
+      # Also consumed only by the entrypoint, which renders them into the
+      # mounted test directory and then unsets them.
+      SIP_1001_PASSWORD: ${SIP_1001_PASSWORD:?set SIP_1001_PASSWORD in infra/.env}
+      SIP_1002_PASSWORD: ${SIP_1002_PASSWORD:?set SIP_1002_PASSWORD in infra/.env}
+
+    # ---------------------------------------------------------------------------
+    # Published ports - all bound to 127.0.0.1 only. Nothing in this
+    # environment is reachable from the LAN or the internet.
+    #
+    #   8021  ESL, for fs_cli / manual ESL tooling and a later host-run Java
+    #         process. A containerised Java process uses freeswitch:8021 on the
+    #         obd-telephony network instead and does not need this mapping.
+    #   5060  internal SIP, for a host softphone (registration, local calls).
+    #   5080  external SIP, the profile the fs-gateway trunk is bound to.
+    #   30000-30099/udp
+    #         RTP, matching rtp-start-port/rtp-end-port in switch.conf.xml.
+    #         A deliberately narrow 100-port window; the FreeSWITCH default
+    #         of 16384-32768 (16384 ports) is never published. Container to
+    #         container media does not traverse the host at all.
+    #
+    # Deliberately NOT published: 5061, 5081, 5066, 7443, 21, 2222.
+    # The profiles in conf/sip_profiles/ omit the TLS and websocket bindings
+    # so those ports are not bound inside the container either.
+    # ---------------------------------------------------------------------------
+    ports:
+      - "127.0.0.1:8021:8021/tcp"                 # ESL
+      - "127.0.0.1:5060:5060/udp"                 # internal SIP
+      - "127.0.0.1:5060:5060/tcp"
+      - "127.0.0.1:5080:5080/udp"                 # external SIP
+      - "127.0.0.1:5080:5080/tcp"
+      - "127.0.0.1:30000-30099:30000-30099/udp"   # RTP (narrow dev range)
+
+    volumes:
+      # --- configuration overrides (small, explicit, one file each) ---------
+      - ./freeswitch/conf/autoload_configs/acl.conf.xml:/etc/freeswitch/autoload_configs/acl.conf.xml:ro
+      - ./freeswitch/conf/autoload_configs/switch.conf.xml:/etc/freeswitch/autoload_configs/switch.conf.xml:ro
+      - ./freeswitch/conf/autoload_configs/sofia.conf.xml:/etc/freeswitch/autoload_configs/sofia.conf.xml:ro
+      - ./freeswitch/conf/sip_profiles/internal.xml:/etc/freeswitch/sip_profiles/internal.xml:ro
+      - ./freeswitch/conf/sip_profiles/external.xml:/etc/freeswitch/sip_profiles/external.xml:ro
+
+      # The ESL config is a TEMPLATE rendered by the entrypoint; it is not
+      # mounted into the live config path because the target must be writable.
+      - ./freeswitch/conf/autoload_configs/event_socket.conf.xml.in:/opt/obd/event_socket.conf.xml.in:ro
+
+      # Phase C: the DIRECTORY, as a template rendered by the entrypoint into
+      # /etc/freeswitch/directory/default.xml.
+      #
+      # It replaces the image's stock directory rather than being added beside
+      # it, and that is not cosmetic. The stock file defines users 1000-1014
+      # with a publicly known password, in the same domain as these test
+      # extensions - so it both accepts a known credential (once registration is
+      # enabled) and shadows test extension 1001, which makes a CORRECT password
+      # answer 403. It also has to be written, not mounted read-only, so the
+      # template is mounted into /opt/obd and rendered by the entrypoint.
+      - ./freeswitch/conf/directory/default.xml.in:/opt/obd/default.xml.in:ro
+
+      # Gateway directory. Mounted at the FreeSWITCH configuration root and
+      # pulled into the compiled config by the <gateways> section of
+      # sofia.conf.xml. It is NOT mounted into
+      # sip_profiles/external/gateway/, the conventional location, because in
+      # this image mod_sofia's per-profile directory scan finds no gateways
+      # at all (its "sofia_dir" variable is unset) - see sofia.conf.xml.
+      - ./freeswitch/gateway:/etc/freeswitch/gateway:ro
+
+      # Phase E: the OUTBOUND DIALPLAN, replacing the image's stock public.xml.
+      #
+      # The stock context answers every extension 1000-1019 locally with the
+      # voicemail application. That made this switch report a clean
+      # CHANNEL_ANSWER for a call that had never left the machine: the
+      # originated leg was answered by the switch's own loopback, while the
+      # test endpoint had no channel, no SDP was exchanged, and no RTP moved.
+      # A local application that answers its own dialstring reports success for
+      # anything it has a pattern for, so this file routes a registered
+      # extension to its contact instead. See the file header, and
+      # docs/LIVE-FREESWITCH-PHASE-E.md.
+      #
+      # Read-only and static: it contains no credential, so unlike the ESL
+      # config and the directory it does not need rendering at start-up.
+      - ./freeswitch/dialplan/public.xml:/etc/freeswitch/dialplan/public.xml:ro
+
+      # Entry point: renders the ESL password, then execs FreeSWITCH.
+      - ./freeswitch/scripts/entrypoint.sh:/opt/obd/entrypoint.sh:ro
+
+      # --- runtime ------------------------------------------------------------
+      - ./freeswitch/logs:/var/log/freeswitch
+
+      # --- application media -------------------------------------------------
+      # The application's local audio store, read-only to FreeSWITCH.
+      #   backend/data/audio  ->  /media/obd
+      # The app will later be pointed at this with
+      # audio.storage.freeswitch-media-root=/media/obd (no Java change
+      # required). FreeSWITCH's own sounds directory
+      # (/usr/share/freeswitch/sounds) is deliberately NOT shadowed, so the
+      # built-in sound tree stays intact.
+      - ../backend/data/audio:/media/obd:ro
+
+    healthcheck:
+      # Not a TCP probe: it asks FreeSWITCH itself for its state and requires
+      # an explicit UP. fs_cli needs the ESL password, which is why the
+      # password is passed explicitly rather than relying on a config probe.
+      test: ["CMD-SHELL", "fs_cli -p \"$$FREESWITCH_PASSWORD\" -x status 2>/dev/null | grep -q '^UP'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+    # FreeSWITCH flushes its compiled configuration and closes sessions on
+    # SIGTERM; give it room rather than the 10s default.
+    stop_grace_period: 30s
+
+networks:
+  telephony:
+    name: obd-telephony
+    driver: bridge

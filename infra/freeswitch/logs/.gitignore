@@ -1,0 +1,6 @@
+# FreeSWITCH runtime logs.
+# The Phase B compose file bind-mounts this directory to /var/log/freeswitch
+# so FreeSWITCH log output is inspectable from the host and survives restarts.
+# Logs are runtime output and must never be committed.
+*
+!.gitignore

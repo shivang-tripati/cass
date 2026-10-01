@@ -1,0 +1,10 @@
+# Application-managed audio assets (VB-5B local storage).
+#
+# This directory is the FreeSWITCH-visible media root. In Docker it is bind
+# mounted read-only into the FreeSWITCH container as /media/obd.
+#
+# Audio files are runtime data, not source. They are produced by the
+# application's LocalAudioStorage (audio/{tenant}/{asset}/{file}) and must
+# never be committed.
+*
+!.gitignore

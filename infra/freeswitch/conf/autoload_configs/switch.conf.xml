@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase B live FreeSWITCH environment
+  Core (switch.conf) configuration.
+
+  Why this file is replaced: in the stock FreeSWITCH configuration the
+  RTP port range is commented out. In the stock file those two lines read:
+
+      param name="rtp-start-port" value="16384"
+      param name="rtp-end-port"   value="32768"
+
+  (shown here without their comment markers, because XML comments cannot be
+  nested inside another comment and doing so produces an unclosed-comment
+  parse error.)
+
+  so FreeSWITCH falls back to its compiled-in default of 16384-32768
+  (16,384 UDP ports). Publishing that range to a Windows host is neither
+  necessary nor desirable for local development, so the range is narrowed
+  to 100 ports and only those are published.
+
+  Container-to-container RTP later (platform FreeSWITCH <-> provider
+  FreeSWITCH) does not traverse the Windows host at all, so this narrowed
+  range only ever needs to serve a host softphone.
+-->
+<configuration name="switch.conf" description="OBD Phase B Core Configuration">
+
+  <settings>
+    <param name="switchname" value="obd-dev"/>
+
+    <!-- === RTP (dev range, mirrored by the published UDP port range) === -->
+    <param name="rtp-start-port" value="30000"/>
+    <param name="rtp-end-port" value="30099"/>
+
+    <!--
+      Session ceiling. Stated explicitly so the environment has a
+      deliberate, documented value.
+
+      This value was temporarily set to 42 during Phase B validation purely
+      as a fingerprint: "fs_cli -x status" reports it as "N session(s) max",
+      which proves this file is the configuration FreeSWITCH actually loaded
+      (FreeSWITCH's own default is 1000, so the shipped value proves
+      nothing on its own). It was reverted to 1000 after the check.
+    -->
+    <param name="max-sessions" value="1000"/>
+
+    <!--
+      "info" rather than the stock "debug": the stock value produces a very
+      noisy startup log for a single-purpose dev container. Raise it only
+      when actively diagnosing.
+    -->
+    <param name="loglevel" value="info"/>
+  </settings>
+
+</configuration>

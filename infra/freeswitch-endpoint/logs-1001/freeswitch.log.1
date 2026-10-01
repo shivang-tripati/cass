@@ -1,0 +1,974 @@
+2026-09-28 06:59:08.309734 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_logfile]
+2026-09-28 06:59:08.311892 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_enum]
+2026-09-28 06:59:08.311982 0.00% [NOTICE] switch_loadable_module.c:273 Adding Dialplan 'enum'
+2026-09-28 06:59:08.312353 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'enum'
+2026-09-28 06:59:08.312441 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'enum'
+2026-09-28 06:59:08.312475 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'enum_auto'
+2026-09-28 06:59:08.312960 0.00% [DEBUG] mod_cdr_csv.c:368 Adding default template.
+2026-09-28 06:59:08.313179 0.00% [DEBUG] mod_cdr_csv.c:415 Adding template sql.
+2026-09-28 06:59:08.313204 0.00% [DEBUG] mod_cdr_csv.c:415 Adding template example.
+2026-09-28 06:59:08.313214 0.00% [DEBUG] mod_cdr_csv.c:415 Adding template snom.
+2026-09-28 06:59:08.313224 0.00% [DEBUG] mod_cdr_csv.c:415 Adding template linksys.
+2026-09-28 06:59:08.313231 0.00% [DEBUG] mod_cdr_csv.c:415 Adding template asterisk.
+2026-09-28 06:59:08.313444 0.00% [DEBUG] mod_cdr_csv.c:415 Adding template opencdrrate.
+2026-09-28 06:59:08.317486 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_cdr_csv]
+2026-09-28 06:59:08.317547 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'cdr_csv'
+2026-09-28 06:59:08.321230 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_event_socket]
+2026-09-28 06:59:08.321295 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'socket'
+2026-09-28 06:59:08.321370 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'event_sink'
+2026-09-28 06:59:08.325249 0.00% [INFO] mod_sofia.c:6737 Starting initial message thread.
+2026-09-28 06:59:08.325983 0.00% [DEBUG] sofia.c:4718 debug [0]
+2026-09-28 06:59:08.325997 0.00% [DEBUG] sofia.c:4718 sip-trace [no]
+2026-09-28 06:59:08.326011 0.00% [DEBUG] sofia.c:4718 sip-capture [no]
+2026-09-28 06:59:08.326019 0.00% [DEBUG] sofia.c:4718 sip-port [5060]
+2026-09-28 06:59:08.326034 0.00% [DEBUG] sofia.c:4718 listen-ip [0.0.0.0]
+2026-09-28 06:59:08.326054 0.00% [DEBUG] sofia.c:4718 dialplan [XML]
+2026-09-28 06:59:08.326067 0.00% [DEBUG] sofia.c:4718 context [obd-endpoint]
+2026-09-28 06:59:08.326079 0.00% [DEBUG] sofia.c:4718 auth-calls [false]
+2026-09-28 06:59:08.326101 0.00% [DEBUG] sofia.c:4718 auth-subscriptions [false]
+2026-09-28 06:59:08.326112 0.00% [DEBUG] sofia.c:4718 challenge-realm [172.25.0.3]
+2026-09-28 06:59:08.326123 0.00% [DEBUG] sofia.c:4718 inbound-codec-prefs [PCMU,PCMA]
+2026-09-28 06:59:08.326133 0.00% [DEBUG] sofia.c:4718 outbound-codec-prefs [PCMU,PCMA]
+2026-09-28 06:59:08.326144 0.00% [DEBUG] sofia.c:4718 rfc2833-pt [101]
+2026-09-28 06:59:08.326152 0.00% [DEBUG] sofia.c:4718 liberal-dtmf [true]
+2026-09-28 06:59:08.326159 0.00% [DEBUG] sofia.c:4718 dtmf-duration [2000]
+2026-09-28 06:59:08.326172 0.00% [DEBUG] sofia.c:4718 inbound-codec-negotiation [generous]
+2026-09-28 06:59:08.326184 0.00% [DEBUG] sofia.c:4718 rtp-timer-name [soft]
+2026-09-28 06:59:08.326194 0.00% [DEBUG] sofia.c:4718 apply-inbound-acl [obd-dev-acl]
+2026-09-28 06:59:08.326255 0.00% [INFO] sofia.c:6173 Setting nonce TTL to 60 seconds
+2026-09-28 06:59:08.326304 0.00% [INFO] sofia.c:6178 Setting MAX Auth Validity to 0 Attempts
+2026-09-28 06:59:08.326758 0.00% [NOTICE] sofia.c:6341 Started Profile obd-endpoint [sofia_reg_obd-endpoint]
+2026-09-28 06:59:08.327266 0.00% [DEBUG] mod_sofia.c:6753 Waiting for profiles to start
+2026-09-28 06:59:08.327300 0.00% [WARNING] sofia.c:2279 MSG Thread 0 Started
+2026-09-28 06:59:08.327618 0.00% [DEBUG] sofia.c:3153 Creating agent for obd-endpoint
+2026-09-28 06:59:08.330672 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: sip_registrations]
+[delete from sip_registrations where sub_host is null and hostname='obd-fs-endpoint-1001' and network_ip like '%' and network_port like '%' and sip_username like '%' and mwi_user  like '%' and mwi_host like '%' and orig_server_host like '%' and orig_hostname like '%']
+Auto Generating Table!
+2026-09-28 06:59:08.330752 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: sip_registrations]
+[drop table sip_registrations]
+2026-09-28 06:59:08.333557 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: sip_subscriptions]
+[delete from sip_subscriptions where hostname='obd-fs-endpoint-1001' and full_to='XXX']
+Auto Generating Table!
+2026-09-28 06:59:08.333649 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: sip_subscriptions]
+[DROP TABLE sip_subscriptions]
+2026-09-28 06:59:08.335395 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: sip_dialogs]
+[delete from sip_dialogs where hostname='obd-fs-endpoint-1001' and (expires <> -9999 or rpid='' or sip_from_tag='' or rcd > 0)]
+Auto Generating Table!
+2026-09-28 06:59:08.335479 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: sip_dialogs]
+[DROP TABLE sip_dialogs]
+2026-09-28 06:59:08.337507 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: sip_presence]
+[delete from sip_presence where hostname='obd-fs-endpoint-1001' or open_closed='']
+Auto Generating Table!
+2026-09-28 06:59:08.337696 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: sip_presence]
+[DROP TABLE sip_presence]
+2026-09-28 06:59:08.338616 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: sip_authentication]
+[delete from sip_authentication where hostname='obd-fs-endpoint-1001' or last_nc >= 0 or algorithm >= 0]
+Auto Generating Table!
+2026-09-28 06:59:08.338671 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: sip_authentication]
+[DROP TABLE sip_authentication]
+2026-09-28 06:59:08.340705 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: sip_shared_appearance_subscriptions]
+[delete from sip_shared_appearance_subscriptions where contact_str='' or hostname='obd-fs-endpoint-1001' and network_ip like '%']
+Auto Generating Table!
+2026-09-28 06:59:08.340964 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: sip_shared_appearance_subscriptions]
+[DROP TABLE sip_shared_appearance_subscriptions]
+2026-09-28 06:59:08.341877 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: sip_shared_appearance_dialogs]
+[delete from sip_shared_appearance_dialogs where contact_str='' or hostname='obd-fs-endpoint-1001' and network_ip like '%']
+Auto Generating Table!
+2026-09-28 06:59:08.342127 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: sip_shared_appearance_dialogs]
+[DROP TABLE sip_shared_appearance_dialogs]
+2026-09-28 06:59:08.418392 0.00% [DEBUG] sofia.c:3316 Created agent for obd-endpoint
+2026-09-28 06:59:08.418536 0.00% [DEBUG] sofia.c:3366 Set params for obd-endpoint
+2026-09-28 06:59:08.418543 0.00% [DEBUG] sofia.c:3413 Activated db for obd-endpoint
+2026-09-28 06:59:08.422629 0.00% [INFO] switch_core_sqldb.c:1840 sofia:obd-endpoint Starting SQL thread.
+2026-09-28 06:59:08.424482 0.00% [DEBUG] sofia.c:3451 Starting thread for obd-endpoint
+2026-09-28 06:59:08.424556 0.00% [DEBUG] sofia.c:3043 Launching worker thread for obd-endpoint
+2026-09-28 06:59:08.425129 0.00% [NOTICE] sofia_reg.c:3722 Added gateway 'platform-switch' to profile 'obd-endpoint'
+2026-09-28 06:59:09.430663 0.00% [NOTICE] sofia_reg.c:463 Registering platform-switch
+2026-09-28 06:59:09.533574 0.00% [ERR] sofia_reg.c:2661 platform-switch Failed Registration with status Forbidden [403]. failure #1
+2026-09-28 06:59:09.829757 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_sofia]
+2026-09-28 06:59:09.829837 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'sofia'
+2026-09-28 06:59:09.829894 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'rtp'
+2026-09-28 06:59:09.829922 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sofia_sla'
+2026-09-28 06:59:09.829962 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sofia_stir_shaken_vs'
+2026-09-28 06:59:09.830012 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sofia'
+2026-09-28 06:59:09.830034 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sofia_gateway_data'
+2026-09-28 06:59:09.830058 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sofia_username_of'
+2026-09-28 06:59:09.830079 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sofia_contact'
+2026-09-28 06:59:09.830101 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sofia_count_reg'
+2026-09-28 06:59:09.830264 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sofia_dig'
+2026-09-28 06:59:09.830325 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sofia_presence_data'
+2026-09-28 06:59:09.830346 0.00% [NOTICE] switch_loadable_module.c:419 Adding JSON API Function 'sofia.status'
+2026-09-28 06:59:09.830362 0.00% [NOTICE] switch_loadable_module.c:419 Adding JSON API Function 'sofia.status.info'
+2026-09-28 06:59:09.830398 0.00% [NOTICE] switch_loadable_module.c:621 Adding Chat interface 'sip'
+2026-09-28 06:59:09.830420 0.00% [NOTICE] switch_loadable_module.c:683 Adding Management interface 'mod_sofia' OID[.1.3.6.1.4.1.27880.1001]
+2026-09-28 06:59:09.831071 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_loopback]
+2026-09-28 06:59:09.831126 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'loopback'
+2026-09-28 06:59:09.831279 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'null'
+2026-09-28 06:59:09.831293 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'unloop'
+2026-09-28 06:59:09.831610 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_rtc]
+2026-09-28 06:59:09.831634 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'rtc'
+2026-09-28 06:59:09.834123 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: json_store]
+[select name from json_store where name='']
+Auto Generating Table!
+2026-09-28 06:59:09.834170 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: json_store]
+[drop table json_store]
+2026-09-28 06:59:09.835492 0.00% [INFO] mod_verto.c:5331 Secure key and cert specified
+2026-09-28 06:59:09.835513 0.00% [DEBUG] mod_verto.c:5445 default-v4 Bound to 172.25.0.3:8081
+2026-09-28 06:59:09.835519 0.00% [DEBUG] mod_verto.c:5445 default-v4 Bound to 172.25.0.3:8082
+2026-09-28 06:59:09.835884 0.00% [INFO] mod_verto.c:5331 Secure key and cert specified
+2026-09-28 06:59:09.835897 0.00% [DEBUG] mod_verto.c:5445 default-v6 Bound to [::1]:8081
+2026-09-28 06:59:09.835902 0.00% [DEBUG] mod_verto.c:5445 default-v6 Bound to [::1]:8082
+2026-09-28 06:59:09.846458 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_verto]
+2026-09-28 06:59:09.846520 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'verto.rtc'
+2026-09-28 06:59:09.846648 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'verto'
+2026-09-28 06:59:09.846684 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'verto_contact'
+2026-09-28 06:59:09.846727 0.00% [NOTICE] switch_loadable_module.c:419 Adding JSON API Function 'store'
+2026-09-28 06:59:09.846759 0.00% [NOTICE] switch_loadable_module.c:621 Adding Chat interface 'verto'
+2026-09-28 06:59:09.846885 0.00% [INFO] mod_verto.c:5101 default-v4 MCAST Bound to 224.1.1.1:1337/1338
+2026-09-28 06:59:09.849562 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_commands]
+2026-09-28 06:59:09.849597 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'msrp_recv_file'
+2026-09-28 06:59:09.849673 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'msrp_send_file'
+2026-09-28 06:59:09.849701 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'bg_system'
+2026-09-28 06:59:09.849822 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'system'
+2026-09-28 06:59:09.849861 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'bg_spawn'
+2026-09-28 06:59:09.850053 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'spawn'
+2026-09-28 06:59:09.850083 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'spawn_stream'
+2026-09-28 06:59:09.850109 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'acl'
+2026-09-28 06:59:09.850132 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'alias'
+2026-09-28 06:59:09.850158 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'coalesce'
+2026-09-28 06:59:09.850189 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'banner'
+2026-09-28 06:59:09.850211 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'bgapi'
+2026-09-28 06:59:09.850288 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'break'
+2026-09-28 06:59:09.850369 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'complete'
+2026-09-28 06:59:09.850404 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'cond'
+2026-09-28 06:59:09.850433 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'console_complete'
+2026-09-28 06:59:09.850462 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'console_complete_xml'
+2026-09-28 06:59:09.850709 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'create_uuid'
+2026-09-28 06:59:09.850746 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'db_cache'
+2026-09-28 06:59:09.850773 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'domain_data'
+2026-09-28 06:59:09.850816 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'domain_exists'
+2026-09-28 06:59:09.850848 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'echo'
+2026-09-28 06:59:09.850871 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'event_channel_broadcast'
+2026-09-28 06:59:09.850901 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'escape'
+2026-09-28 06:59:09.850925 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'eval'
+2026-09-28 06:59:09.850953 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'expand'
+2026-09-28 06:59:09.851180 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'find_user_xml'
+2026-09-28 06:59:09.851213 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'fsctl'
+2026-09-28 06:59:09.851240 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function '...'
+2026-09-28 06:59:09.851262 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'shutdown'
+2026-09-28 06:59:09.851286 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'version'
+2026-09-28 06:59:09.851307 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'global_getvar'
+2026-09-28 06:59:09.851339 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'global_setvar'
+2026-09-28 06:59:09.851361 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'group_call'
+2026-09-28 06:59:09.851382 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'help'
+2026-09-28 06:59:09.851411 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'host_lookup'
+2026-09-28 06:59:09.851432 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'hostname'
+2026-09-28 06:59:09.851456 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'interface_ip'
+2026-09-28 06:59:09.851480 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'switchname'
+2026-09-28 06:59:09.851500 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'gethost'
+2026-09-28 06:59:09.851521 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'getenv'
+2026-09-28 06:59:09.851551 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'hupall'
+2026-09-28 06:59:09.851571 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'in_group'
+2026-09-28 06:59:09.851590 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'is_lan_addr'
+2026-09-28 06:59:09.851758 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'limit_usage'
+2026-09-28 06:59:09.851788 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'limit_hash_usage'
+2026-09-28 06:59:09.851808 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'limit_status'
+2026-09-28 06:59:09.851832 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'limit_reset'
+2026-09-28 06:59:09.851860 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'limit_interval_reset'
+2026-09-28 06:59:09.851880 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'list_users'
+2026-09-28 06:59:09.851901 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'load'
+2026-09-28 06:59:09.851928 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'log'
+2026-09-28 06:59:09.851953 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'md5'
+2026-09-28 06:59:09.852016 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'module_exists'
+2026-09-28 06:59:09.852044 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'msleep'
+2026-09-28 06:59:09.852070 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'nat_map'
+2026-09-28 06:59:09.852130 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'originate'
+2026-09-28 06:59:09.852153 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'pause'
+2026-09-28 06:59:09.852176 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'pool_stats'
+2026-09-28 06:59:09.852236 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'quote_shell_arg'
+2026-09-28 06:59:09.852261 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'regex'
+2026-09-28 06:59:09.852318 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'reloadacl'
+2026-09-28 06:59:09.852372 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'reload'
+2026-09-28 06:59:09.852403 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'reloadxml'
+2026-09-28 06:59:09.852432 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'reloadcert'
+2026-09-28 06:59:09.852460 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'replace'
+2026-09-28 06:59:09.852559 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'say_string'
+2026-09-28 06:59:09.852590 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sched_api'
+2026-09-28 06:59:09.852645 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sched_broadcast'
+2026-09-28 06:59:09.852672 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sched_del'
+2026-09-28 06:59:09.852825 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sched_hangup'
+2026-09-28 06:59:09.852852 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sched_transfer'
+2026-09-28 06:59:09.852946 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'show'
+2026-09-28 06:59:09.852971 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sql_escape'
+2026-09-28 06:59:09.852995 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'status'
+2026-09-28 06:59:09.853016 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'strftime_tz'
+2026-09-28 06:59:09.853038 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'stun'
+2026-09-28 06:59:09.853063 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'time_test'
+2026-09-28 06:59:09.853083 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'timer_test'
+2026-09-28 06:59:09.853104 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'tone_detect'
+2026-09-28 06:59:09.853122 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'unload'
+2026-09-28 06:59:09.853167 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'unsched_api'
+2026-09-28 06:59:09.853188 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uptime'
+2026-09-28 06:59:09.853207 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'reg_url'
+2026-09-28 06:59:09.853225 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'url_decode'
+2026-09-28 06:59:09.853245 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'url_encode'
+2026-09-28 06:59:09.853267 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'toupper'
+2026-09-28 06:59:09.853287 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'tolower'
+2026-09-28 06:59:09.853309 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'user_data'
+2026-09-28 06:59:09.853459 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_early_ok'
+2026-09-28 06:59:09.853488 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'user_exists'
+2026-09-28 06:59:09.853499 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_answer'
+2026-09-28 06:59:09.853511 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_audio'
+2026-09-28 06:59:09.853524 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_break'
+2026-09-28 06:59:09.853540 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_bridge'
+2026-09-28 06:59:09.853555 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_broadcast'
+2026-09-28 06:59:09.853570 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_buglist'
+2026-09-28 06:59:09.853611 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_chat'
+2026-09-28 06:59:09.853702 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_send_text'
+2026-09-28 06:59:09.853717 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_capture_text'
+2026-09-28 06:59:09.853731 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_codec_debug'
+2026-09-28 06:59:09.853752 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_codec_param'
+2026-09-28 06:59:09.853765 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_debug_media'
+2026-09-28 06:59:09.853779 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_deflect'
+2026-09-28 06:59:09.853812 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_displace'
+2026-09-28 06:59:09.853824 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_display'
+2026-09-28 06:59:09.853853 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_media_params'
+2026-09-28 06:59:09.853867 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_drop_dtmf'
+2026-09-28 06:59:09.853882 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_dump'
+2026-09-28 06:59:09.853895 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_exists'
+2026-09-28 06:59:09.853908 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_fileman'
+2026-09-28 06:59:09.853921 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_flush_dtmf'
+2026-09-28 06:59:09.853972 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_getvar'
+2026-09-28 06:59:09.853984 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_hold'
+2026-09-28 06:59:09.854042 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_kill'
+2026-09-28 06:59:09.854069 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_send_message'
+2026-09-28 06:59:09.854083 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_send_info'
+2026-09-28 06:59:09.854096 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_set_media_stats'
+2026-09-28 06:59:09.854109 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_video_bitrate'
+2026-09-28 06:59:09.854123 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_video_bandwidth'
+2026-09-28 06:59:09.854137 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_video_refresh'
+2026-09-28 06:59:09.854200 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_outgoing_answer'
+2026-09-28 06:59:09.854214 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_limit'
+2026-09-28 06:59:09.854227 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_limit_release'
+2026-09-28 06:59:09.854240 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_loglevel'
+2026-09-28 06:59:09.854253 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_media'
+2026-09-28 06:59:09.854266 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_media_3p'
+2026-09-28 06:59:09.854279 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_media_reneg'
+2026-09-28 06:59:09.854293 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_park'
+2026-09-28 06:59:09.854305 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_pause'
+2026-09-28 06:59:09.854316 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_phone_event'
+2026-09-28 06:59:09.854421 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_ring_ready'
+2026-09-28 06:59:09.854497 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_pre_answer'
+2026-09-28 06:59:09.854522 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_preprocess'
+2026-09-28 06:59:09.854547 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_record'
+2026-09-28 06:59:09.854569 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_recovery_refresh'
+2026-09-28 06:59:09.854796 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_recv_dtmf'
+2026-09-28 06:59:09.854823 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_redirect'
+2026-09-28 06:59:09.854843 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_send_dtmf'
+2026-09-28 06:59:09.854863 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_session_heartbeat'
+2026-09-28 06:59:09.854899 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_setvar_multi'
+2026-09-28 06:59:09.854925 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_setvar'
+2026-09-28 06:59:09.854943 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_transfer'
+2026-09-28 06:59:09.854971 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_dual_transfer'
+2026-09-28 06:59:09.854994 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_simplify'
+2026-09-28 06:59:09.855016 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_jitterbuffer'
+2026-09-28 06:59:09.855035 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_zombie_exec'
+2026-09-28 06:59:09.855061 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_xfer_zombie'
+2026-09-28 06:59:09.855084 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'xml_flush_cache'
+2026-09-28 06:59:09.855108 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'xml_locate'
+2026-09-28 06:59:09.855127 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'xml_wrap'
+2026-09-28 06:59:09.855194 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'file_exists'
+2026-09-28 06:59:09.855216 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'getcputime'
+2026-09-28 06:59:09.855327 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'json'
+2026-09-28 06:59:09.855350 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'memory'
+2026-09-28 06:59:09.855376 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'msrp'
+2026-09-28 06:59:09.855396 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_msrp_send'
+2026-09-28 06:59:09.855422 0.00% [NOTICE] switch_loadable_module.c:419 Adding JSON API Function 'mediaStats'
+2026-09-28 06:59:09.855472 0.00% [NOTICE] switch_loadable_module.c:419 Adding JSON API Function 'status'
+2026-09-28 06:59:09.855496 0.00% [NOTICE] switch_loadable_module.c:419 Adding JSON API Function 'fsapi'
+2026-09-28 06:59:09.855515 0.00% [NOTICE] switch_loadable_module.c:419 Adding JSON API Function 'execute'
+2026-09-28 06:59:09.855538 0.00% [NOTICE] switch_loadable_module.c:419 Adding JSON API Function 'channelData'
+2026-09-28 06:59:09.858157 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_conference]
+2026-09-28 06:59:09.858189 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'conference'
+2026-09-28 06:59:09.858215 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'conference_set_auto_outcall'
+2026-09-28 06:59:09.858236 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'conference'
+2026-09-28 06:59:09.858257 0.00% [NOTICE] switch_loadable_module.c:621 Adding Chat interface 'conf'
+2026-09-28 06:59:09.858492 0.00% [CONSOLE] sofia_presence.c:1621 Event Thread Started
+2026-09-28 06:59:09.860013 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: limit_data]
+[select * from limit_data]
+Auto Generating Table!
+2026-09-28 06:59:09.861553 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: db_data]
+[select * from db_data]
+Auto Generating Table!
+2026-09-28 06:59:09.863038 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: group_data]
+[select * from group_data]
+Auto Generating Table!
+2026-09-28 06:59:09.873474 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_db]
+2026-09-28 06:59:09.873504 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'db'
+2026-09-28 06:59:09.873534 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'group'
+2026-09-28 06:59:09.873550 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'db'
+2026-09-28 06:59:09.873565 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'group'
+2026-09-28 06:59:09.873578 0.00% [NOTICE] switch_loadable_module.c:717 Adding Limit interface 'db'
+2026-09-28 06:59:10.359702 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_dptools]
+2026-09-28 06:59:10.359821 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'error'
+2026-09-28 06:59:10.359941 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'group'
+2026-09-28 06:59:10.359967 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'user'
+2026-09-28 06:59:10.359987 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'pickup'
+2026-09-28 06:59:10.360008 0.00% [NOTICE] switch_loadable_module.c:273 Adding Dialplan 'inline'
+2026-09-28 06:59:10.360022 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'blind_transfer_ack'
+2026-09-28 06:59:10.360042 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'bind_digit_action'
+2026-09-28 06:59:10.360063 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'capture'
+2026-09-28 06:59:10.360083 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'clear_digit_action'
+2026-09-28 06:59:10.360140 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'digit_action_set_realm'
+2026-09-28 06:59:10.360159 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'privacy'
+2026-09-28 06:59:10.360178 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set_audio_level'
+2026-09-28 06:59:10.360199 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set_mute'
+2026-09-28 06:59:10.360221 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'flush_dtmf'
+2026-09-28 06:59:10.360241 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'hold'
+2026-09-28 06:59:10.360264 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'unhold'
+2026-09-28 06:59:10.360287 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'mutex'
+2026-09-28 06:59:10.360310 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'page'
+2026-09-28 06:59:10.360327 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'transfer'
+2026-09-28 06:59:10.360340 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'check_acl'
+2026-09-28 06:59:10.360359 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'verbose_events'
+2026-09-28 06:59:10.360370 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'novideo'
+2026-09-28 06:59:10.360381 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'cng_plc'
+2026-09-28 06:59:10.360413 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'early_hangup'
+2026-09-28 06:59:10.360471 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sleep'
+2026-09-28 06:59:10.360500 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'delay_echo'
+2026-09-28 06:59:10.360519 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'strftime'
+2026-09-28 06:59:10.360538 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'phrase'
+2026-09-28 06:59:10.360557 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'eval'
+2026-09-28 06:59:10.360577 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set_media_stats'
+2026-09-28 06:59:10.360603 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'stop'
+2026-09-28 06:59:10.360627 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set_zombie_exec'
+2026-09-28 06:59:10.360649 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'pre_answer'
+2026-09-28 06:59:10.360666 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'answer'
+2026-09-28 06:59:10.360683 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'wait_for_answer'
+2026-09-28 06:59:10.360702 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'wait_for_video_ready'
+2026-09-28 06:59:10.360727 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'hangup'
+2026-09-28 06:59:10.360771 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set_name'
+2026-09-28 06:59:10.360792 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'presence'
+2026-09-28 06:59:10.360813 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'log'
+2026-09-28 06:59:10.360835 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'info'
+2026-09-28 06:59:10.360853 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'event'
+2026-09-28 06:59:10.360871 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sound_test'
+2026-09-28 06:59:10.360892 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'export'
+2026-09-28 06:59:10.360910 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'bridge_export'
+2026-09-28 06:59:10.360928 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set'
+2026-09-28 06:59:10.360948 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'multiset'
+2026-09-28 06:59:10.360968 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'push'
+2026-09-28 06:59:10.360987 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'unshift'
+2026-09-28 06:59:10.361006 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set_global'
+2026-09-28 06:59:10.361025 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set_profile_var'
+2026-09-28 06:59:10.361047 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'unset'
+2026-09-28 06:59:10.361059 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'multiunset'
+2026-09-28 06:59:10.361080 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'capture_text'
+2026-09-28 06:59:10.361091 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'acknowledge_call'
+2026-09-28 06:59:10.361103 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'ring_ready'
+2026-09-28 06:59:10.361115 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'remove_bugs'
+2026-09-28 06:59:10.361126 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'break'
+2026-09-28 06:59:10.361138 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'detect_speech'
+2026-09-28 06:59:10.361153 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'play_and_detect_speech'
+2026-09-28 06:59:10.361165 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'ivr'
+2026-09-28 06:59:10.361179 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'redirect'
+2026-09-28 06:59:10.361190 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'video_refresh'
+2026-09-28 06:59:10.361203 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'video_decode'
+2026-09-28 06:59:10.361216 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'send_info'
+2026-09-28 06:59:10.361229 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'jitterbuffer'
+2026-09-28 06:59:10.361249 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'send_display'
+2026-09-28 06:59:10.361260 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'respond'
+2026-09-28 06:59:10.361355 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'deflect'
+2026-09-28 06:59:10.361381 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'recovery_refresh'
+2026-09-28 06:59:10.361402 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'reuse_caller_profile'
+2026-09-28 06:59:10.361423 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'queue_dtmf'
+2026-09-28 06:59:10.361444 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'send_dtmf'
+2026-09-28 06:59:10.361471 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sched_cancel'
+2026-09-28 06:59:10.361484 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sched_hangup'
+2026-09-28 06:59:10.361495 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sched_broadcast'
+2026-09-28 06:59:10.361507 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sched_transfer'
+2026-09-28 06:59:10.361519 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'execute_extension'
+2026-09-28 06:59:10.361531 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'sched_heartbeat'
+2026-09-28 06:59:10.361542 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'enable_heartbeat'
+2026-09-28 06:59:10.361554 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'filter_codecs'
+2026-09-28 06:59:10.361565 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'enable_keepalive'
+2026-09-28 06:59:10.361576 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'media_reset'
+2026-09-28 06:59:10.361588 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'mkdir'
+2026-09-28 06:59:10.361599 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'rename'
+2026-09-28 06:59:10.361610 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'transfer_vars'
+2026-09-28 06:59:10.361622 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'soft_hold'
+2026-09-28 06:59:10.361634 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'bind_meta_app'
+2026-09-28 06:59:10.361689 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'unbind_meta_app'
+2026-09-28 06:59:10.361701 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'block_dtmf'
+2026-09-28 06:59:10.361713 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'unblock_dtmf'
+2026-09-28 06:59:10.361725 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'intercept'
+2026-09-28 06:59:10.361736 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'eavesdrop'
+2026-09-28 06:59:10.361747 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'native_eavesdrop'
+2026-09-28 06:59:10.361760 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'three_way'
+2026-09-28 06:59:10.361772 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'set_user'
+2026-09-28 06:59:10.361784 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'stop_dtmf'
+2026-09-28 06:59:10.361796 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'start_dtmf'
+2026-09-28 06:59:10.361908 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'stop_dtmf_generate'
+2026-09-28 06:59:10.361921 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'start_dtmf_generate'
+2026-09-28 06:59:10.361932 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'stop_tone_detect'
+2026-09-28 06:59:10.361944 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'fax_detect'
+2026-09-28 06:59:10.361956 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'tone_detect'
+2026-09-28 06:59:10.361967 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'echo'
+2026-09-28 06:59:10.361979 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'park'
+2026-09-28 06:59:10.361990 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'park_state'
+2026-09-28 06:59:10.362009 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'gentones'
+2026-09-28 06:59:10.362032 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'playback'
+2026-09-28 06:59:10.362085 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'broadcast'
+2026-09-28 06:59:10.362106 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'endless_playback'
+2026-09-28 06:59:10.362128 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'loop_playback'
+2026-09-28 06:59:10.362147 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'att_xfer'
+2026-09-28 06:59:10.362169 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'read'
+2026-09-28 06:59:10.362191 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'play_and_get_digits'
+2026-09-28 06:59:10.362347 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'stop_video_write_overlay'
+2026-09-28 06:59:10.362371 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'video_write_overlay'
+2026-09-28 06:59:10.362390 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'stop_record_session'
+2026-09-28 06:59:10.362409 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'record_session'
+2026-09-28 06:59:10.362431 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'record_session_mask'
+2026-09-28 06:59:10.362484 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'record_session_unmask'
+2026-09-28 06:59:10.362513 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'record_session_pause'
+2026-09-28 06:59:10.362591 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'record_session_resume'
+2026-09-28 06:59:10.362662 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'record'
+2026-09-28 06:59:10.362686 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'preprocess'
+2026-09-28 06:59:10.362703 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'stop_displace_session'
+2026-09-28 06:59:10.362718 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'displace_session'
+2026-09-28 06:59:10.362734 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'speak'
+2026-09-28 06:59:10.362750 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'clear_speech_cache'
+2026-09-28 06:59:10.362765 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'bridge'
+2026-09-28 06:59:10.362787 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'system'
+2026-09-28 06:59:10.362811 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'bgsystem'
+2026-09-28 06:59:10.362832 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'say'
+2026-09-28 06:59:10.362852 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'detect_audio'
+2026-09-28 06:59:10.363001 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'detect_silence'
+2026-09-28 06:59:10.363037 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'wait_for_silence'
+2026-09-28 06:59:10.363061 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'session_loglevel'
+2026-09-28 06:59:10.363271 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'limit'
+2026-09-28 06:59:10.363304 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'limit_hash'
+2026-09-28 06:59:10.363420 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'limit_execute'
+2026-09-28 06:59:10.363449 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'limit_hash_execute'
+2026-09-28 06:59:10.363472 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'pickup'
+2026-09-28 06:59:10.363497 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'deduplicate_dtmf'
+2026-09-28 06:59:10.363532 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'vad_test'
+2026-09-28 06:59:10.363553 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'debug_media'
+2026-09-28 06:59:10.363574 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'strepoch'
+2026-09-28 06:59:10.363612 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'page'
+2026-09-28 06:59:10.363634 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'strmicroepoch'
+2026-09-28 06:59:10.363656 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'chat'
+2026-09-28 06:59:10.363693 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'strftime'
+2026-09-28 06:59:10.363715 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'presence'
+2026-09-28 06:59:10.363739 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'file_string'
+2026-09-28 06:59:10.363767 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'file'
+2026-09-28 06:59:10.363797 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'tts'
+2026-09-28 06:59:10.363820 0.00% [NOTICE] switch_loadable_module.c:621 Adding Chat interface 'event'
+2026-09-28 06:59:10.363856 0.00% [NOTICE] switch_loadable_module.c:621 Adding Chat interface 'api'
+2026-09-28 06:59:10.364499 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_expr]
+2026-09-28 06:59:10.364534 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'expr'
+2026-09-28 06:59:10.371784 0.00% [INFO] switch_core_sqldb.c:1840 fifo Starting SQL thread.
+2026-09-28 06:59:10.374490 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: fifo_outbound]
+[delete from fifo_outbound where static = 1 or taking_calls < 0 or stop_time < 0]
+Auto Generating Table!
+2026-09-28 06:59:10.374643 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: fifo_outbound]
+[drop table fifo_outbound]
+2026-09-28 06:59:10.377801 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: fifo_bridge]
+[delete from fifo_bridge]
+Auto Generating Table!
+2026-09-28 06:59:10.377870 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: fifo_bridge]
+[drop table fifo_bridge]
+2026-09-28 06:59:10.378661 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: fifo_callers]
+[delete from fifo_callers]
+Auto Generating Table!
+2026-09-28 06:59:10.378717 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: fifo_callers]
+[drop table fifo_callers]
+2026-09-28 06:59:10.380656 0.00% [INFO] mod_fifo.c:4647 cool_fifo@172.25.0.3 configured
+2026-09-28 06:59:10.381263 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_fifo]
+2026-09-28 06:59:10.381305 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'fifo'
+2026-09-28 06:59:10.381416 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'fifo_track_call'
+2026-09-28 06:59:10.381448 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'fifo'
+2026-09-28 06:59:10.381587 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'fifo_member'
+2026-09-28 06:59:10.381680 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'fifo_add_outbound'
+2026-09-28 06:59:10.381715 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'fifo_check_bridge'
+2026-09-28 06:59:10.382359 0.00% [DEBUG] switch_scheduler.c:263 Added task 3 limit_hash_cleanup (mod_hash) to run at 1790579650
+2026-09-28 06:59:10.382546 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_hash]
+2026-09-28 06:59:10.382577 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'hash'
+2026-09-28 06:59:10.382608 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'hash'
+2026-09-28 06:59:10.382638 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'hash_dump'
+2026-09-28 06:59:10.382663 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'hash_remote'
+2026-09-28 06:59:10.382690 0.00% [NOTICE] switch_loadable_module.c:717 Adding Limit interface 'hash'
+2026-09-28 06:59:10.387497 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: voicemail_msgs]
+[select count(forwarded_by) from voicemail_msgs]
+Auto Generating Table!
+2026-09-28 06:59:10.387564 0.00% [DEBUG] switch_core_sqldb.c:1508 SQL ERR [no such table: voicemail_msgs]
+[alter table voicemail_msgs add forwarded_by varchar(255)]
+2026-09-28 06:59:10.387622 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: voicemail_msgs]
+[select count(forwarded_by) from voicemail_msgs]
+Auto Generating Table!
+2026-09-28 06:59:10.387673 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: voicemail_msgs]
+[drop table voicemail_msgs]
+2026-09-28 06:59:10.388490 0.00% [DEBUG] switch_core_sqldb.c:1494 SQL ERR [no such table: voicemail_prefs]
+[select count(username) from voicemail_prefs]
+Auto Generating Table!
+2026-09-28 06:59:10.388551 0.00% [DEBUG] switch_core_sqldb.c:1501 Ignoring SQL ERR [no such table: voicemail_prefs]
+[drop table voicemail_prefs]
+2026-09-28 06:59:10.398657 0.00% [INFO] mod_voicemail.c:794 Added Profile default
+2026-09-28 06:59:10.398736 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_voicemail]
+2026-09-28 06:59:10.398763 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'voicemail'
+2026-09-28 06:59:10.398841 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'voicemail'
+2026-09-28 06:59:10.398861 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'voicemail_inject'
+2026-09-28 06:59:10.398874 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_inject'
+2026-09-28 06:59:10.398917 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_boxcount'
+2026-09-28 06:59:10.398953 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_prefs'
+2026-09-28 06:59:10.398970 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_delete'
+2026-09-28 06:59:10.398983 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_read'
+2026-09-28 06:59:10.398997 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_list'
+2026-09-28 06:59:10.399008 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_auth_login'
+2026-09-28 06:59:10.399024 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_count'
+2026-09-28 06:59:10.399037 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_list'
+2026-09-28 06:59:10.399050 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_get'
+2026-09-28 06:59:10.399065 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_delete'
+2026-09-28 06:59:10.399077 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_undelete'
+2026-09-28 06:59:10.399089 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_email'
+2026-09-28 06:59:10.399101 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_purge'
+2026-09-28 06:59:10.399114 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_save'
+2026-09-28 06:59:10.399127 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_msg_forward'
+2026-09-28 06:59:10.399307 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_pref_greeting_set'
+2026-09-28 06:59:10.399324 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_pref_greeting_get'
+2026-09-28 06:59:10.399339 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_pref_recname_set'
+2026-09-28 06:59:10.399351 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'vm_fsdb_pref_password_set'
+2026-09-28 06:59:10.399686 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_esf]
+2026-09-28 06:59:10.399707 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'esf_page_group'
+2026-09-28 06:59:10.400025 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_fsv]
+2026-09-28 06:59:10.400044 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'play_fsv'
+2026-09-28 06:59:10.400098 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'record_fsv'
+2026-09-28 06:59:10.400114 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'play_yuv'
+2026-09-28 06:59:10.400128 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'decode_video'
+2026-09-28 06:59:10.400141 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'fsv'
+2026-09-28 06:59:10.400472 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_valet_parking]
+2026-09-28 06:59:10.400492 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'valet_park'
+2026-09-28 06:59:10.400557 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'valet_info'
+2026-09-28 06:59:10.408298 0.00% [NOTICE] mod_httapi.c:2171 Profile [default] JSON Function [http://www.freeswitch.org/api/index.cgi]
+2026-09-28 06:59:10.408405 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_httapi]
+2026-09-28 06:59:10.408459 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'httapi'
+2026-09-28 06:59:10.408601 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'httapi'
+2026-09-28 06:59:10.408645 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'http'
+2026-09-28 06:59:10.408667 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'https'
+2026-09-28 06:59:10.409736 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_dialplan_xml]
+2026-09-28 06:59:10.409773 0.00% [NOTICE] switch_loadable_module.c:273 Adding Dialplan 'XML'
+2026-09-28 06:59:10.410705 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_dialplan_asterisk]
+2026-09-28 06:59:10.410733 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'SIP'
+2026-09-28 06:59:10.410811 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'IAX2'
+2026-09-28 06:59:10.410836 0.00% [NOTICE] switch_loadable_module.c:273 Adding Dialplan 'asterisk'
+2026-09-28 06:59:10.410859 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'Dial'
+2026-09-28 06:59:10.410885 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'Goto'
+2026-09-28 06:59:10.410915 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'AvoidingDeadlock'
+2026-09-28 06:59:10.413074 0.00% [DEBUG] mod_spandsp_fax.c:213 FAX timer thread started.
+2026-09-28 06:59:10.432961 0.00% [WARNING] sofia_reg.c:520 platform-switch Failed Registration [403], setting retry to 30 seconds.
+2026-09-28 06:59:10.434928 0.00% [DEBUG] mod_spandsp.c:894 mod_spandsp loaded, using spandsp library version [20120902 163333]
+2026-09-28 06:59:10.434942 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_spandsp]
+2026-09-28 06:59:10.434965 0.00% [NOTICE] switch_loadable_module.c:172 Adding Endpoint 'modem'
+2026-09-28 06:59:10.435042 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 6 ADPCM (IMA) 16000hz 10ms 1ch 64000bps
+2026-09-28 06:59:10.435061 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 6 ADPCM (IMA) 16000hz 20ms 1ch 64000bps
+2026-09-28 06:59:10.435065 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 6 ADPCM (IMA) 16000hz 30ms 1ch 64000bps
+2026-09-28 06:59:10.435069 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 6 ADPCM (IMA) 16000hz 40ms 1ch 64000bps
+2026-09-28 06:59:10.435074 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 6 ADPCM (IMA) 16000hz 50ms 1ch 64000bps
+2026-09-28 06:59:10.435078 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 6 ADPCM (IMA) 16000hz 60ms 1ch 64000bps
+2026-09-28 06:59:10.435081 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 10ms 1ch 32000bps
+2026-09-28 06:59:10.435085 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 20ms 1ch 32000bps
+2026-09-28 06:59:10.435091 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 30ms 1ch 32000bps
+2026-09-28 06:59:10.435094 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 40ms 1ch 32000bps
+2026-09-28 06:59:10.435098 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 50ms 1ch 32000bps
+2026-09-28 06:59:10.435102 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 60ms 1ch 32000bps
+2026-09-28 06:59:10.435105 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 70ms 1ch 32000bps
+2026-09-28 06:59:10.435109 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 80ms 1ch 32000bps
+2026-09-28 06:59:10.435165 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 90ms 1ch 32000bps
+2026-09-28 06:59:10.435183 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 100ms 1ch 32000bps
+2026-09-28 06:59:10.435187 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 110ms 1ch 32000bps
+2026-09-28 06:59:10.435191 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec DVI4 5 ADPCM (IMA) 8000hz 120ms 1ch 32000bps
+2026-09-28 06:59:10.435217 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 10ms 1ch 16000bps
+2026-09-28 06:59:10.435228 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 20ms 1ch 16000bps
+2026-09-28 06:59:10.435310 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 30ms 1ch 16000bps
+2026-09-28 06:59:10.435321 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 40ms 1ch 16000bps
+2026-09-28 06:59:10.435330 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 50ms 1ch 16000bps
+2026-09-28 06:59:10.435340 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 60ms 1ch 16000bps
+2026-09-28 06:59:10.435349 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 70ms 1ch 16000bps
+2026-09-28 06:59:10.435356 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 80ms 1ch 16000bps
+2026-09-28 06:59:10.435361 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 90ms 1ch 16000bps
+2026-09-28 06:59:10.435365 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 100ms 1ch 16000bps
+2026-09-28 06:59:10.435369 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 110ms 1ch 16000bps
+2026-09-28 06:59:10.435373 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-16 124 G.726 16k (AAL2) 8000hz 120ms 1ch 16000bps
+2026-09-28 06:59:10.435416 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 10ms 1ch 16000bps
+2026-09-28 06:59:10.435423 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 20ms 1ch 16000bps
+2026-09-28 06:59:10.435428 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 30ms 1ch 16000bps
+2026-09-28 06:59:10.435432 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 40ms 1ch 16000bps
+2026-09-28 06:59:10.435436 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 50ms 1ch 16000bps
+2026-09-28 06:59:10.435439 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 60ms 1ch 16000bps
+2026-09-28 06:59:10.435443 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 70ms 1ch 16000bps
+2026-09-28 06:59:10.435447 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 80ms 1ch 16000bps
+2026-09-28 06:59:10.435451 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 90ms 1ch 16000bps
+2026-09-28 06:59:10.435455 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 100ms 1ch 16000bps
+2026-09-28 06:59:10.435459 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 110ms 1ch 16000bps
+2026-09-28 06:59:10.435462 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-16 124 G.726 16k 8000hz 120ms 1ch 16000bps
+2026-09-28 06:59:10.435508 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 10ms 1ch 24000bps
+2026-09-28 06:59:10.435517 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 20ms 1ch 24000bps
+2026-09-28 06:59:10.435523 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 30ms 1ch 24000bps
+2026-09-28 06:59:10.435528 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 40ms 1ch 24000bps
+2026-09-28 06:59:10.435532 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 50ms 1ch 24000bps
+2026-09-28 06:59:10.435547 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 60ms 1ch 24000bps
+2026-09-28 06:59:10.435558 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 70ms 1ch 24000bps
+2026-09-28 06:59:10.435565 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 80ms 1ch 24000bps
+2026-09-28 06:59:10.435569 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 90ms 1ch 24000bps
+2026-09-28 06:59:10.435573 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 100ms 1ch 24000bps
+2026-09-28 06:59:10.435577 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 110ms 1ch 24000bps
+2026-09-28 06:59:10.435582 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-24 123 G.726 24k (AAL2) 8000hz 120ms 1ch 24000bps
+2026-09-28 06:59:10.435678 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 10ms 1ch 24000bps
+2026-09-28 06:59:10.435685 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 20ms 1ch 24000bps
+2026-09-28 06:59:10.435690 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 30ms 1ch 24000bps
+2026-09-28 06:59:10.435694 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 40ms 1ch 24000bps
+2026-09-28 06:59:10.435698 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 50ms 1ch 24000bps
+2026-09-28 06:59:10.435702 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 60ms 1ch 24000bps
+2026-09-28 06:59:10.435706 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 70ms 1ch 24000bps
+2026-09-28 06:59:10.435728 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 80ms 1ch 24000bps
+2026-09-28 06:59:10.435732 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 90ms 1ch 24000bps
+2026-09-28 06:59:10.435736 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 100ms 1ch 24000bps
+2026-09-28 06:59:10.435740 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 110ms 1ch 24000bps
+2026-09-28 06:59:10.435743 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-24 123 G.726 24k 8000hz 120ms 1ch 24000bps
+2026-09-28 06:59:10.435806 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 10ms 1ch 32000bps
+2026-09-28 06:59:10.435820 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 20ms 1ch 32000bps
+2026-09-28 06:59:10.435829 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 30ms 1ch 32000bps
+2026-09-28 06:59:10.435837 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 40ms 1ch 32000bps
+2026-09-28 06:59:10.435844 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 50ms 1ch 32000bps
+2026-09-28 06:59:10.435851 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 60ms 1ch 32000bps
+2026-09-28 06:59:10.435858 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 70ms 1ch 32000bps
+2026-09-28 06:59:10.435866 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 80ms 1ch 32000bps
+2026-09-28 06:59:10.435874 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 90ms 1ch 32000bps
+2026-09-28 06:59:10.435882 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 100ms 1ch 32000bps
+2026-09-28 06:59:10.435932 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 110ms 1ch 32000bps
+2026-09-28 06:59:10.435939 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-32 122 G.726 32k (AAL2) 8000hz 120ms 1ch 32000bps
+2026-09-28 06:59:10.435986 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 10ms 1ch 32000bps
+2026-09-28 06:59:10.435993 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 20ms 1ch 32000bps
+2026-09-28 06:59:10.435997 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 30ms 1ch 32000bps
+2026-09-28 06:59:10.436001 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 40ms 1ch 32000bps
+2026-09-28 06:59:10.436004 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 50ms 1ch 32000bps
+2026-09-28 06:59:10.436008 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 60ms 1ch 32000bps
+2026-09-28 06:59:10.436012 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 70ms 1ch 32000bps
+2026-09-28 06:59:10.436015 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 80ms 1ch 32000bps
+2026-09-28 06:59:10.436021 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 90ms 1ch 32000bps
+2026-09-28 06:59:10.436024 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 100ms 1ch 32000bps
+2026-09-28 06:59:10.436028 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 110ms 1ch 32000bps
+2026-09-28 06:59:10.436032 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-32 122 G.726 32k 8000hz 120ms 1ch 32000bps
+2026-09-28 06:59:10.436067 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 10ms 1ch 40000bps
+2026-09-28 06:59:10.436099 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 20ms 1ch 40000bps
+2026-09-28 06:59:10.436106 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 30ms 1ch 40000bps
+2026-09-28 06:59:10.436114 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 40ms 1ch 40000bps
+2026-09-28 06:59:10.436118 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 50ms 1ch 40000bps
+2026-09-28 06:59:10.436123 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 60ms 1ch 40000bps
+2026-09-28 06:59:10.436127 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 70ms 1ch 40000bps
+2026-09-28 06:59:10.436131 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 80ms 1ch 40000bps
+2026-09-28 06:59:10.436134 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 90ms 1ch 40000bps
+2026-09-28 06:59:10.436139 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 100ms 1ch 40000bps
+2026-09-28 06:59:10.436143 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 110ms 1ch 40000bps
+2026-09-28 06:59:10.436147 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AAL2-G726-40 121 G.726 40k (AAL2) 8000hz 120ms 1ch 40000bps
+2026-09-28 06:59:10.436200 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 10ms 1ch 40000bps
+2026-09-28 06:59:10.436206 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 20ms 1ch 40000bps
+2026-09-28 06:59:10.436211 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 30ms 1ch 40000bps
+2026-09-28 06:59:10.436214 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 40ms 1ch 40000bps
+2026-09-28 06:59:10.436218 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 50ms 1ch 40000bps
+2026-09-28 06:59:10.436229 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 60ms 1ch 40000bps
+2026-09-28 06:59:10.436233 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 70ms 1ch 40000bps
+2026-09-28 06:59:10.436237 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 80ms 1ch 40000bps
+2026-09-28 06:59:10.436240 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 90ms 1ch 40000bps
+2026-09-28 06:59:10.436250 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 100ms 1ch 40000bps
+2026-09-28 06:59:10.436254 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 110ms 1ch 40000bps
+2026-09-28 06:59:10.436257 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G726-40 121 G.726 40k 8000hz 120ms 1ch 40000bps
+2026-09-28 06:59:10.436309 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G722 9 G.722 16000hz 10ms 1ch 64000bps
+2026-09-28 06:59:10.436321 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G722 9 G.722 16000hz 20ms 1ch 64000bps
+2026-09-28 06:59:10.436328 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G722 9 G.722 16000hz 30ms 1ch 64000bps
+2026-09-28 06:59:10.436335 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G722 9 G.722 16000hz 40ms 1ch 64000bps
+2026-09-28 06:59:10.436341 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G722 9 G.722 16000hz 50ms 1ch 64000bps
+2026-09-28 06:59:10.436348 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G722 9 G.722 16000hz 60ms 1ch 64000bps
+2026-09-28 06:59:10.436386 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec GSM 3 GSM 8000hz 20ms 1ch 13200bps
+2026-09-28 06:59:10.436425 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec GSM 3 GSM 8000hz 40ms 1ch 13200bps
+2026-09-28 06:59:10.436435 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec GSM 3 GSM 8000hz 60ms 1ch 13200bps
+2026-09-28 06:59:10.436443 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec GSM 3 GSM 8000hz 80ms 1ch 13200bps
+2026-09-28 06:59:10.436454 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec GSM 3 GSM 8000hz 100ms 1ch 13200bps
+2026-09-28 06:59:10.436465 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec GSM 3 GSM 8000hz 120ms 1ch 13200bps
+2026-09-28 06:59:10.436553 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec LPC 7 LPC-10 8000hz 90ms 1ch 2400bps
+2026-09-28 06:59:10.436582 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 't38_gateway'
+2026-09-28 06:59:10.436606 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'rxfax'
+2026-09-28 06:59:10.436753 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'txfax'
+2026-09-28 06:59:10.436784 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'stopfax'
+2026-09-28 06:59:10.436804 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_stop_dtmf'
+2026-09-28 06:59:10.436818 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_start_dtmf'
+2026-09-28 06:59:10.436830 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_stop_inject_tdd'
+2026-09-28 06:59:10.437051 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_inject_tdd'
+2026-09-28 06:59:10.437075 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_stop_detect_tdd'
+2026-09-28 06:59:10.437093 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_detect_tdd'
+2026-09-28 06:59:10.437121 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_send_tdd'
+2026-09-28 06:59:10.437199 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_start_fax_detect'
+2026-09-28 06:59:10.437332 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_stop_fax_detect'
+2026-09-28 06:59:10.437500 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_start_tone_detect'
+2026-09-28 06:59:10.437530 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'spandsp_stop_tone_detect'
+2026-09-28 06:59:10.437548 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'spandsp_start_tone_detect'
+2026-09-28 06:59:10.437561 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'spandsp_stop_tone_detect'
+2026-09-28 06:59:10.437666 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'start_tdd_detect'
+2026-09-28 06:59:10.437770 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'stop_tdd_detect'
+2026-09-28 06:59:10.437788 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_send_tdd'
+2026-09-28 06:59:10.438174 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_g723_1]
+2026-09-28 06:59:10.438207 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G723 4 G.723.1 6.3k 8000hz 120ms 1ch 6300bps
+2026-09-28 06:59:10.438219 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G723 4 G.723.1 6.3k 8000hz 90ms 1ch 6300bps
+2026-09-28 06:59:10.438227 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G723 4 G.723.1 6.3k 8000hz 60ms 1ch 6300bps
+2026-09-28 06:59:10.438231 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G723 4 G.723.1 6.3k 8000hz 30ms 1ch 6300bps
+2026-09-28 06:59:10.438807 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_g729]
+2026-09-28 06:59:10.438829 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 10ms 1ch 8000bps
+2026-09-28 06:59:10.438835 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 20ms 1ch 8000bps
+2026-09-28 06:59:10.438840 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 30ms 1ch 8000bps
+2026-09-28 06:59:10.438843 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 40ms 1ch 8000bps
+2026-09-28 06:59:10.438854 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 50ms 1ch 8000bps
+2026-09-28 06:59:10.438858 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 60ms 1ch 8000bps
+2026-09-28 06:59:10.438861 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 70ms 1ch 8000bps
+2026-09-28 06:59:10.438865 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 80ms 1ch 8000bps
+2026-09-28 06:59:10.438868 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 90ms 1ch 8000bps
+2026-09-28 06:59:10.438872 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 100ms 1ch 8000bps
+2026-09-28 06:59:10.438894 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 110ms 1ch 8000bps
+2026-09-28 06:59:10.438898 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec G729 18 G.729 8000hz 120ms 1ch 8000bps
+2026-09-28 06:59:10.439363 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_amr]
+2026-09-28 06:59:10.439384 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AMR 96 AMR / Octet Aligned 8000hz 20ms 1ch 12200bps
+2026-09-28 06:59:10.439439 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec AMR 97 AMR / Bandwidth Efficient 8000hz 20ms 1ch 12200bps
+2026-09-28 06:59:10.439855 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_b64]
+2026-09-28 06:59:10.439876 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec b64 116 B64 (STANDARD) 32000hz 20ms 1ch 684800bps
+2026-09-28 06:59:10.439882 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec b64 116 B64 (STANDARD) 16000hz 20ms 1ch 342400bps
+2026-09-28 06:59:10.439906 0.00% [NOTICE] switch_loadable_module.c:223 Adding Codec b64 116 B64 (STANDARD) 8000hz 20ms 1ch 171200bps
+2026-09-28 06:59:10.440822 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_opus]
+2026-09-28 06:59:10.440862 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 40ms 2ch (VBR)
+2026-09-28 06:59:10.440868 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 40ms 1ch (VBR)
+2026-09-28 06:59:10.440872 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 120ms 1ch (VBR)
+2026-09-28 06:59:10.440876 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 100ms 1ch (VBR)
+2026-09-28 06:59:10.440879 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 80ms 1ch (VBR)
+2026-09-28 06:59:10.440883 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 60ms 1ch (VBR)
+2026-09-28 06:59:10.440886 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 20ms 2ch (VBR)
+2026-09-28 06:59:10.440889 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 20ms 1ch (VBR)
+2026-09-28 06:59:10.440893 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 10ms 2ch (VBR)
+2026-09-28 06:59:10.440896 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 8000hz 10ms 1ch (VBR)
+2026-09-28 06:59:10.440899 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 16000hz 40ms 2ch (VBR)
+2026-09-28 06:59:10.440903 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 16000hz 40ms 1ch (VBR)
+2026-09-28 06:59:10.440907 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 16000hz 60ms 1ch (VBR)
+2026-09-28 06:59:10.440910 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 16000hz 20ms 2ch (VBR)
+2026-09-28 06:59:10.440914 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 16000hz 20ms 1ch (VBR)
+2026-09-28 06:59:10.440917 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 16000hz 10ms 2ch (VBR)
+2026-09-28 06:59:10.440926 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 16000hz 10ms 1ch (VBR)
+2026-09-28 06:59:10.440930 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 48000hz 40ms 2ch (VBR)
+2026-09-28 06:59:10.440934 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 48000hz 40ms 1ch (VBR)
+2026-09-28 06:59:10.440937 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 48000hz 20ms 2ch (VBR)
+2026-09-28 06:59:10.440940 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 48000hz 20ms 1ch (VBR)
+2026-09-28 06:59:10.440944 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 48000hz 10ms 2ch (VBR)
+2026-09-28 06:59:10.440947 0.00% [NOTICE] switch_loadable_module.c:229 Adding Codec opus 116 OPUS (STANDARD) 48000hz 10ms 1ch (VBR)
+2026-09-28 06:59:10.441002 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'opus_debug'
+2026-09-28 06:59:10.441670 0.00% [CRIT] switch_loadable_module.c:1754 Error Loading module /usr/lib/freeswitch/mod/mod_av.so
+**Error loading shared library libavformat.so.62: No such file or directory (needed by /usr/lib/freeswitch/mod/mod_av.so)**
+2026-09-28 06:59:10.446972 0.00% [INFO] mod_sndfile.c:498 
+LibSndFile Version : libsndfile-1.2.2 Supported Formats
+================================================================================
+AIFF (Apple/SGI)  (extension "aiff")
+AU (Sun/NeXT)  (extension "au")
+AVR (Audio Visual Research)  (extension "avr")
+CAF (Apple Core Audio File)  (extension "caf")
+FLAC (Free Lossless Audio Codec)  (extension "flac")
+HTK (HMM Tool Kit)  (extension "htk")
+IFF (Amiga IFF/SVX8/SV16)  (extension "iff")
+MAT4 (GNU Octave 2.0 / Matlab 4.2)  (extension "mat")
+MAT5 (GNU Octave 2.1 / Matlab 5.0)  (extension "mat")
+MPC (Akai MPC 2k)  (extension "mpc")
+MPEG-1/2 Audio  (extension "m1a")
+OGG (OGG Container format)  (extension "oga")
+OGG (OGG Container format)  (extension "ogg")
+PAF (Ensoniq PARIS)  (extension "paf")
+PVF (Portable Voice Format)  (extension "pvf")
+RAW (header-less)  (extension "raw")
+RF64 (RIFF 64)  (extension "rf64")
+SD2 (Sound Designer II)  (extension "sd2")
+SDS (Midi Sample Dump Standard)  (extension "sds")
+SF (Berkeley/IRCAM/CARL)  (extension "sf")
+VOC (Creative Labs)  (extension "voc")
+W64 (SoundFoundry WAVE 64)  (extension "w64")
+WAV (Microsoft)  (extension "wav")
+WAV (NIST Sphere)  (extension "wav")
+WAVEX (Microsoft)  (extension "wav")
+WVE (Psion Series 3)  (extension "wve")
+XI (FastTracker 2)  (extension "xi")
+================================================================================
+2026-09-28 06:59:10.447338 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_sndfile]
+2026-09-28 06:59:10.447413 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'sndfile_debug'
+2026-09-28 06:59:10.447515 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'aiff'
+2026-09-28 06:59:10.447690 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'au'
+2026-09-28 06:59:10.447767 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'avr'
+2026-09-28 06:59:10.447915 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'caf'
+2026-09-28 06:59:10.448021 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'flac'
+2026-09-28 06:59:10.448099 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'htk'
+2026-09-28 06:59:10.448210 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'iff'
+2026-09-28 06:59:10.448338 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'mat'
+2026-09-28 06:59:10.448424 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'mpc'
+2026-09-28 06:59:10.448509 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'm1a'
+2026-09-28 06:59:10.448613 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'oga'
+2026-09-28 06:59:10.448746 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'paf'
+2026-09-28 06:59:10.448798 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'pvf'
+2026-09-28 06:59:10.448973 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'raw'
+2026-09-28 06:59:10.449049 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'rf64'
+2026-09-28 06:59:10.449159 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'sd2'
+2026-09-28 06:59:10.449233 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'sds'
+2026-09-28 06:59:10.449351 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'sf'
+2026-09-28 06:59:10.449433 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'voc'
+2026-09-28 06:59:10.449560 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'w64'
+2026-09-28 06:59:10.449760 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'wav'
+2026-09-28 06:59:10.450037 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'wve'
+2026-09-28 06:59:10.450147 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'xi'
+2026-09-28 06:59:10.450166 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'r8'
+2026-09-28 06:59:10.450181 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'r16'
+2026-09-28 06:59:10.450351 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'r24'
+2026-09-28 06:59:10.450374 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'r32'
+2026-09-28 06:59:10.450388 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'gsm'
+2026-09-28 06:59:10.450401 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'ul'
+2026-09-28 06:59:10.450414 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'ulaw'
+2026-09-28 06:59:10.450434 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'al'
+2026-09-28 06:59:10.450452 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'alaw'
+2026-09-28 06:59:10.450538 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'adpcm'
+2026-09-28 06:59:10.450553 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'vox'
+2026-09-28 06:59:10.450576 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'oga'
+2026-09-28 06:59:10.450589 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'ogg'
+2026-09-28 06:59:10.450922 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_native_file]
+2026-09-28 06:59:10.450948 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'AAL2-G726-32'
+2026-09-28 06:59:10.451001 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'DVI4'
+2026-09-28 06:59:10.451019 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'PCMU'
+2026-09-28 06:59:10.451059 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'G722'
+2026-09-28 06:59:10.451072 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'AAL2-G726-24'
+2026-09-28 06:59:10.451084 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'AAL2-G726-40'
+2026-09-28 06:59:10.451098 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'L16'
+2026-09-28 06:59:10.451114 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'G726-16'
+2026-09-28 06:59:10.451135 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'PCMA'
+2026-09-28 06:59:10.451170 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'G726-24'
+2026-09-28 06:59:10.451181 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'G729'
+2026-09-28 06:59:10.451224 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'AAL2-G726-16'
+2026-09-28 06:59:10.451273 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'G726-32'
+2026-09-28 06:59:10.451296 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'GSM'
+2026-09-28 06:59:10.451308 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'G726-40'
+2026-09-28 06:59:10.451320 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'G723'
+2026-09-28 06:59:10.451332 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'LPC'
+2026-09-28 06:59:10.451624 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_png]
+2026-09-28 06:59:10.451642 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'uuid_write_png'
+2026-09-28 06:59:10.451701 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'png'
+2026-09-28 06:59:10.453555 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_local_stream]
+2026-09-28 06:59:10.453699 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'local_stream'
+2026-09-28 06:59:10.453804 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'local_stream'
+2026-09-28 06:59:10.454224 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_tone_stream]
+2026-09-28 06:59:10.454247 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'tone_stream'
+2026-09-28 06:59:10.454295 0.00% [NOTICE] switch_loadable_module.c:455 Adding File Format 'silence_stream'
+2026-09-28 06:59:10.456305 0.00% [DEBUG] switch_loadable_module.c:1706 Loading module with global namespace at request of module
+2026-09-28 06:59:10.456476 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_lua]
+2026-09-28 06:59:10.456506 0.00% [NOTICE] switch_loadable_module.c:273 Adding Dialplan 'LUA'
+2026-09-28 06:59:10.456604 0.00% [NOTICE] switch_loadable_module.c:329 Adding Application 'lua'
+2026-09-28 06:59:10.456661 0.00% [NOTICE] switch_loadable_module.c:359 Adding Chat Application 'lua'
+2026-09-28 06:59:10.456718 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'luarun'
+2026-09-28 06:59:10.456746 0.00% [NOTICE] switch_loadable_module.c:389 Adding API Function 'lua'
+2026-09-28 06:59:10.457297 0.00% [CONSOLE] switch_loadable_module.c:1772 Successfully Loaded [mod_say_en]
+2026-09-28 06:59:10.457335 0.00% [NOTICE] switch_loadable_module.c:651 Adding Say interface 'en'
+2026-09-28 06:59:10.457451 0.00% [CONSOLE] switch_loadable_module.c:149 Starting runtime thread for mod_verto
+2026-09-28 06:59:10.457895 0.00% [CONSOLE] switch_loadable_module.c:149 Starting runtime thread for mod_event_socket
+2026-09-28 06:59:10.458237 0.00% [CONSOLE] switch_loadable_module.c:149 Starting runtime thread for CORE_SOFTTIMER_MODULE
+2026-09-28 06:59:10.458779 100.00% [INFO] switch_time.c:627 Clock synchronized to system time.
+2026-09-28 06:59:10.458848 100.00% [DEBUG] mod_event_socket.c:2979 Socket up listening on 0.0.0.0:8021
+2026-09-28 06:59:10.458923 100.00% [DEBUG] switch_loadable_module.c:910 Chat Thread Started
+2026-09-28 06:59:10.459488 100.00% [DEBUG] switch_loadable_module.c:910 Chat Thread Started
+2026-09-28 06:59:10.460254 100.00% [NOTICE] switch_core.c:1482 Created ip list rfc6598.auto default (deny)
+2026-09-28 06:59:10.460267 100.00% [NOTICE] switch_utils.c:665 Adding 100.64.0.0/10 (allow) [] to list rfc6598.auto
+2026-09-28 06:59:10.460276 100.00% [NOTICE] switch_core.c:1488 Created ip list rfc1918.auto default (deny)
+2026-09-28 06:59:10.460280 100.00% [NOTICE] switch_utils.c:665 Adding 10.0.0.0/8 (allow) [] to list rfc1918.auto
+2026-09-28 06:59:10.460286 100.00% [NOTICE] switch_utils.c:665 Adding 172.16.0.0/12 (allow) [] to list rfc1918.auto
+2026-09-28 06:59:10.460290 100.00% [NOTICE] switch_utils.c:665 Adding 192.168.0.0/16 (allow) [] to list rfc1918.auto
+2026-09-28 06:59:10.460295 100.00% [NOTICE] switch_utils.c:665 Adding fe80::/10 (allow) [] to list rfc1918.auto
+2026-09-28 06:59:10.460300 100.00% [NOTICE] switch_core.c:1497 Created ip list wan.auto default (allow)
+2026-09-28 06:59:10.460304 100.00% [NOTICE] switch_utils.c:665 Adding 0.0.0.0/8 (deny) [] to list wan.auto
+2026-09-28 06:59:10.460308 100.00% [NOTICE] switch_utils.c:665 Adding 10.0.0.0/8 (deny) [] to list wan.auto
+2026-09-28 06:59:10.460311 100.00% [NOTICE] switch_utils.c:665 Adding 172.16.0.0/12 (deny) [] to list wan.auto
+2026-09-28 06:59:10.460315 100.00% [NOTICE] switch_utils.c:665 Adding 192.168.0.0/16 (deny) [] to list wan.auto
+2026-09-28 06:59:10.460383 100.00% [NOTICE] switch_utils.c:665 Adding 169.254.0.0/16 (deny) [] to list wan.auto
+2026-09-28 06:59:10.460389 100.00% [NOTICE] switch_utils.c:665 Adding 100.64.0.0/10 (deny) [] to list wan.auto
+2026-09-28 06:59:10.460393 100.00% [NOTICE] switch_utils.c:665 Adding fe80::/10 (deny) [] to list wan.auto
+2026-09-28 06:59:10.460397 100.00% [NOTICE] switch_core.c:1509 Created ip list wan_v6.auto default (allow)
+2026-09-28 06:59:10.460401 100.00% [NOTICE] switch_utils.c:665 Adding 0.0.0.0/0 (deny) [] to list wan_v6.auto
+2026-09-28 06:59:10.460411 100.00% [NOTICE] switch_utils.c:665 Adding fe80::/10 (deny) [] to list wan_v6.auto
+2026-09-28 06:59:10.460415 100.00% [NOTICE] switch_core.c:1517 Created ip list wan_v4.auto default (allow)
+2026-09-28 06:59:10.460419 100.00% [NOTICE] switch_utils.c:665 Adding 0.0.0.0/8 (deny) [] to list wan_v4.auto
+2026-09-28 06:59:10.460423 100.00% [NOTICE] switch_utils.c:665 Adding 10.0.0.0/8 (deny) [] to list wan_v4.auto
+2026-09-28 06:59:10.460426 100.00% [NOTICE] switch_utils.c:665 Adding 172.16.0.0/12 (deny) [] to list wan_v4.auto
+2026-09-28 06:59:10.460430 100.00% [NOTICE] switch_utils.c:665 Adding 192.168.0.0/16 (deny) [] to list wan_v4.auto
+2026-09-28 06:59:10.460434 100.00% [NOTICE] switch_utils.c:665 Adding 169.254.0.0/16 (deny) [] to list wan_v4.auto
+2026-09-28 06:59:10.460438 100.00% [NOTICE] switch_utils.c:665 Adding 100.64.0.0/10 (deny) [] to list wan_v4.auto
+2026-09-28 06:59:10.460442 100.00% [NOTICE] switch_utils.c:665 Adding ::/0 (deny) [] to list wan_v4.auto
+2026-09-28 06:59:10.460446 100.00% [NOTICE] switch_core.c:1530 Created ip list any_v6.auto default (allow)
+2026-09-28 06:59:10.460449 100.00% [NOTICE] switch_utils.c:665 Adding 0.0.0.0/0 (deny) [] to list any_v6.auto
+2026-09-28 06:59:10.460452 100.00% [NOTICE] switch_core.c:1537 Created ip list any_v4.auto default (allow)
+2026-09-28 06:59:10.460462 100.00% [NOTICE] switch_utils.c:665 Adding ::/0 (deny) [] to list any_v4.auto
+2026-09-28 06:59:10.460466 100.00% [NOTICE] switch_core.c:1544 Created ip list nat.auto default (deny)
+2026-09-28 06:59:10.460470 100.00% [NOTICE] switch_core.c:1546 Adding 172.25.0.3/255.255.0.0 (deny) to list nat.auto
+2026-09-28 06:59:10.460475 100.00% [NOTICE] switch_utils.c:665 Adding 10.0.0.0/8 (allow) [] to list nat.auto
+2026-09-28 06:59:10.460479 100.00% [NOTICE] switch_utils.c:665 Adding 172.16.0.0/12 (allow) [] to list nat.auto
+2026-09-28 06:59:10.460482 100.00% [NOTICE] switch_utils.c:665 Adding 192.168.0.0/16 (allow) [] to list nat.auto
+2026-09-28 06:59:10.460486 100.00% [NOTICE] switch_utils.c:665 Adding 100.64.0.0/10 (allow) [] to list nat.auto
+2026-09-28 06:59:10.460490 100.00% [NOTICE] switch_core.c:1556 Created ip list loopback.auto default (deny)
+2026-09-28 06:59:10.460507 100.00% [NOTICE] switch_utils.c:665 Adding 127.0.0.0/8 (allow) [] to list loopback.auto
+2026-09-28 06:59:10.460511 100.00% [NOTICE] switch_utils.c:665 Adding ::1/128 (allow) [] to list loopback.auto
+2026-09-28 06:59:10.460515 100.00% [NOTICE] switch_core.c:1563 Created ip list localnet.auto default (deny)
+2026-09-28 06:59:10.460518 100.00% [NOTICE] switch_core.c:1566 Adding 172.25.0.3/255.255.0.0 (allow) to list localnet.auto
+2026-09-28 06:59:10.460526 100.00% [CONSOLE] switch_core.c:1593 Created ip list obd-dev-acl default (deny)
+2026-09-28 06:59:10.460532 100.00% [NOTICE] switch_utils.c:665 Adding 127.0.0.1/32 (allow) [] to list obd-dev-acl
+2026-09-28 06:59:10.460536 100.00% [NOTICE] switch_utils.c:665 Adding ::1/128 (allow) [] to list obd-dev-acl
+2026-09-28 06:59:10.460552 100.00% [NOTICE] switch_utils.c:665 Adding 10.0.0.0/8 (allow) [] to list obd-dev-acl
+2026-09-28 06:59:10.460557 100.00% [NOTICE] switch_utils.c:665 Adding 172.16.0.0/12 (allow) [] to list obd-dev-acl
+2026-09-28 06:59:10.460561 100.00% [NOTICE] switch_utils.c:665 Adding 192.168.0.0/16 (allow) [] to list obd-dev-acl
+2026-09-28 06:59:10.460566 100.00% [CONSOLE] switch_core.c:1593 Created ip list domains default (deny)
+2026-09-28 06:59:10.460622 100.00% [NOTICE] switch_utils.c:665 Adding 192.0.2.0/24 (allow) [brian@172.25.0.3] to list domains
+2026-09-28 06:59:10.460813 100.00% [CONSOLE] switch_core.c:2497 [m[33m[44m
+.=============================================================.
+|   _____              ______        _____ _____ ____ _   _   |
+|  |  ___| __ ___  ___/ ___\ \      / /_ _|_   _/ ___| | | |  |
+|  | |_ | '__/ _ \/ _ \___ \\ \ /\ / / | |  | || |   | |_| |  |
+|  |  _|| | |  __/  __/___) |\ V  V /  | |  | || |___|  _  |  |
+|  |_|  |_|  \___|\___|____/  \_/\_/  |___| |_| \____|_| |_|  |
+|                                                             |
+.=============================================================.
+|   Anthony Minessale II, Michael Jerris, Brian West, Others  |
+|   FreeSWITCH (http://www.freeswitch.org)                    |
+|   Paypal Donations Appreciated: paypal@freeswitch.org       |
+|   Brought to you by ClueCon http://www.cluecon.com/         |
+.=============================================================.
+
+.===============================================================.
+|       _                                                       |
+|   ___| |_   _  ___  ___ ___  _ __         ___ ___  _ __ ___   |
+|  / __| | | | |/ _ \/ __/ _ \| '_ \       / __/ _ \| '_ ` _ \  |
+| | (__| | |_| |  __/ (_| (_) | | | |  _  | (_| (_) | | | | | | |
+|  \___|_|\__,_|\___|\___\___/|_| |_| (_)  \___\___/|_| |_| |_| |
+|                                                               |
+.===============================================================.
+[m
+
+2026-09-28 06:59:10.460831 100.00% [INFO] switch_core.c:2506 
+FreeSWITCH Version 1.11.1-release~64bit ( 64bit)
+
+FreeSWITCH Started
+Max Sessions [1000]
+Session Rate [30]
+SQL [Enabled]
+2026-09-28 06:59:10.460841 100.00% [CONSOLE] switch_core.c:2514 
+[This app Best viewed at 160x60 or more..]
+2026-09-28 06:59:41.518828 92.40% [NOTICE] sofia_reg.c:463 Registering platform-switch
+2026-09-28 06:59:41.518828 92.40% [ERR] sofia_reg.c:2661 platform-switch Failed Registration with status Forbidden [403]. failure #2
+2026-09-28 06:59:42.518803 92.73% [WARNING] sofia_reg.c:520 platform-switch Failed Registration [403], setting retry to 60 seconds.
+2026-09-28 07:00:43.678830 94.13% [NOTICE] sofia_reg.c:463 Registering platform-switch
+2026-09-28 07:00:43.678830 94.13% [ERR] sofia_reg.c:2661 platform-switch Failed Registration with status Forbidden [403]. failure #3
+2026-09-28 07:00:44.678829 94.07% [WARNING] sofia_reg.c:520 platform-switch Failed Registration [403], setting retry to 90 seconds.
+2026-09-28 07:02:15.918779 93.27% [NOTICE] sofia_reg.c:463 Registering platform-switch
+2026-09-28 07:02:15.938838 93.27% [ERR] sofia_reg.c:2661 platform-switch Failed Registration with status Forbidden [403]. failure #4
+2026-09-28 07:02:16.918959 93.37% [WARNING] sofia_reg.c:520 platform-switch Failed Registration [403], setting retry to 120 seconds.

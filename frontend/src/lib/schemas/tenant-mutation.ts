@@ -4,7 +4,7 @@ import type {
   CreateTenantPayload,
   UpdateTenantPayload,
 } from "@/lib/api/contracts";
-import { PASSWORD_MAX, PASSWORD_MIN } from "@/lib/schemas/auth";
+import { ADMIN_PASSWORD_MIN, PASSWORD_MAX } from "@/lib/schemas/auth";
 
 /** Backend constraints verified against tenant DTOs. */
 export const TENANT_NAME_MAX = 150;
@@ -55,7 +55,7 @@ export const createTenantSchema = z.object({
   adminEmail: z.email("Enter a valid email address.").max(255),
   adminPassword: z
     .string()
-    .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters.`)
+    .min(ADMIN_PASSWORD_MIN, `Password must be at least ${ADMIN_PASSWORD_MIN} characters.`)
     .max(PASSWORD_MAX, `Password must be at most ${PASSWORD_MAX} characters.`),
   adminDisplayName: z.string().trim().max(120),
 });

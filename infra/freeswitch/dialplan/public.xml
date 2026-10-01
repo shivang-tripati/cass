@@ -1,0 +1,105 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase E: the platform's outbound dialplan.
+
+  WHY THIS FILE REPLACES THE STOCK public.xml
+  ============================================
+
+  The stock context answers EVERY extension in 1000-1019 locally with the
+  voicemail application, creating two loopback channels:
+
+      <extension name="local_extension">
+        <condition field="destination_number" expression="^(10[01][0-9])$">
+          <action application="voicemail" data="default"/>
+
+  That produced a FALSE POSITIVE that cost this phase real time, so it is
+  recorded rather than quietly fixed.
+
+  The platform switch reported a clean CHANNEL_ANSWER for
+  sofia/gateway/local-endpoint-1002/1002 while the test endpoint had no channel
+  at all, no SDP had been exchanged (rtp_remote_sdp_str = _undef_), and the
+  endpoint's UDP counters had not moved. The switch was answering its OWN
+  loopback, not placing a call. The only traces were two loopback channels
+  named voicemail-a / voicemail-b, which are easy to miss because the
+  channel event for the *originated* leg looks entirely normal.
+
+  The lesson, which is the reason this file is explicit rather than inherited:
+
+      A channel event reports what the LOCAL switch believes. Only the peer's
+      own state can confirm a call happened somewhere.
+
+  A local switch that answers its own dialstring will report success for any
+  dialstring it has a pattern for. Voicemail answering 1002 is exactly that.
+
+  WHAT THIS DIALPLAN DOES INSTEAD
+  ================================
+
+  For an extension that is REGISTERED, bridge the call to the contact that
+  registered. No local answer, no loopback, no voicemail. If the extension is
+  not registered the call is rejected with USER_NOT_EXISTING, which is a true
+  statement, rather than answered by a local application.
+
+  Why bridge-to-registration rather than an explicit address: measured on this
+  build, mod_sofia routes outbound SIP BY DOMAIN against the registration
+  database of the profile it originates from. Every direct-address form fails,
+  on either profile, by IP or by DNS name:
+
+      sofia/external/1002@172.25.0.4:5060     -> NO_ROUTE_DESTINATION
+      sofia/internal/1002@172.25.0.4:5060     -> NO_ROUTE_DESTINATION
+      sofia/external/1002@endpoint-b:5060      -> NO_ROUTE_DESTINATION
+
+  while the domain-qualified form resolves through the registration and works.
+  So the contact in the registration database is the ONLY route to the
+  endpoint, and hard-coding the endpoint's address would be both wrong and
+  fragile (that address is not stable across container recreates).
+
+  SCOPE AND SAFETY
+  ===============
+
+  This is a development-environment dialplan for a private Docker network. It
+  exposes no service, opens no port, and is not deployed anywhere a carrier or
+  a real subscriber exists. It replaces voicemail answering with routing, which
+  is what a platform that originates calls needs and what voicemail answering
+  actively prevents.
+-->
+<context name="public">
+
+  <!--
+    A registered test extension. Bridge to its registered contact.
+
+    ${destination_number} is used rather than ${sip_destination_user} for the
+    same reason the endpoint's dialplan was corrected in Phase E: for a
+    gateway-originated call these two differ, and destination_number is the
+    number actually dialled.
+  -->
+  <extension name="obd-bridge-registered-extension">
+    <condition field="${sip_destination_user}" expression="^\d{4}$"/>
+
+    <!--
+      Reject an extension that never registered, rather than answering it.
+      A registered extension is proven to exist; an unregistered one must not
+      be answered by anything local.
+    -->
+    <condition field="${user_exists(sip_destination_user)}" expression="true">
+      <action application="set" data="ignore_early_media=true"/>
+
+      <!--
+        Bridge to the contact, in the same profile the registration lives in.
+        The endpoint registers to the internal profile, so this is the
+        internal profile: its database is what holds the contact.
+      -->
+      <action application="bridge"
+              data="sofia/internal/${destination_number}@${domain}"/>
+    </condition>
+
+    <!--
+      Not registered. USER_NOT_EXISTING is an honest answer; the stock
+      voicemail answer was not.
+    -->
+    <condition field="${user_exists(sip_destination_user)}" expression="false">
+      <action application="respond" data="404 Not Found"/>
+      <action application="hangup"/>
+    </condition>
+  </extension>
+
+</context>

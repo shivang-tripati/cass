@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase B live FreeSWITCH environment
+  Gateway "fs-gateway".
+
+  WHY THIS NAME: the Java platform reaches FreeSWITCH through two different
+  configuration sources that must agree:
+
+    1. Campaign / PLAYFILE / DTMF outbound resolves the gateway from the
+       routing decision, i.e. sip_gateways.free_switch_gateway_name.
+    2. The agent leg (CONNECT_BY_AGENT, agent-originated outbound, inbound
+       agent) is originated with gatewayName = null, so it falls back to
+       telephony.freeswitch.gateway.
+
+  Using the single name "fs-gateway" for both keeps one physical gateway
+  serving every origination path, with no Java change.
+
+  WHERE THIS LIVES: it is included from the <gateways> section of the
+  "external" profile in conf/sip_profiles/external.xml. It must be a child
+  of the profile node, not of sofia.conf, because mod_sofia resolves
+  gateways as:
+      sofia.conf -> profiles -> profile[@name] -> gateways -> gateway
+
+  register=false IS LOAD-BEARING, NOT COSMETIC. mod_sofia defaults the
+  "register" parameter to TRUE. With the default, this gateway immediately
+  tries to REGISTER against a provider that does not exist in Phase B, and
+  mod_sofia discards it - "sofia status gateway" then reports 0 gateways
+  and "sofia status gateway fs-gateway" reports "Invalid Gateway!", with no
+  further explanation in the log. Setting register=false makes it a static,
+  origination-only trunk, which is what Phase B needs and what later phases
+  will still need for a trunk that is dialled out but not registered to.
+-->
+<gateway name="fs-gateway">
+
+  <!--
+    Phase B has no provider behind this trunk. The proxy names the service
+    the provider FreeSWITCH will use once it is added in a later phase, so
+    no change will be needed then. With register=false this name is never
+    resolved during Phase B.
+  -->
+  <param name="proxy" value="freeswitch-provider:5080"/>
+
+  <!-- Origination only: never send REGISTER. -->
+  <param name="register" value="false"/>
+
+  <!--
+    Explicit, because the Java dial string never contains a profile
+    (sofia/gateway/<gw>/<dest>). FreeSWITCH selects the profile from this
+    gateway's own sofia-profile setting, and that indirection is easy to
+    miss when reading the Java side.
+  -->
+  <param name="sofia-profile" value="external"/>
+
+</gateway>

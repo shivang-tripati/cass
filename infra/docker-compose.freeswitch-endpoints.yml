@@ -1,0 +1,136 @@
+# OBD Platform - Phase C: local SIP test endpoints.
+#
+# PURPOSE
+# Two additional FreeSWITCH instances that act as local SIP endpoints for the
+# platform switch. They exist because of a measured fact about this machine,
+# not a preference - see the "WHY NOT A HOST SOFTPHONE" note below.
+#
+# WHY NOT A HOST SOFTPHONE (measured in Phase C)
+# The Windows host has NO ROUTE to the Docker bridge network:
+#     Test-NetConnection 172.25.0.2 -Port 5060  ->  TcpTestSucceeded=False
+#     ping 172.25.0.2                            ->  no reply
+#     route print                                 ->  no 172.25.0.0/16 entry
+# FreeSWITCH advertises its container address (172.25.0.2) in both Contact and
+# SDP, so:
+#   * a host softphone can REGISTER and can ORIGINATE (published ports work),
+#   * but FreeSWITCH cannot CALL BACK the host, because it would have to send
+#     to a contact of 127.0.0.1, which is the container's own loopback;
+#   * and RTP can never reach the host.
+# Registering a host client is therefore only half-useful. A callable, media
+# capable endpoint has to live inside the same Docker network, which is exactly
+# what ADR-001 already decided for the future provider simulator.
+#
+# WHY A SECOND FREESWITCH AND NOT SIPP
+# The Docker daemon on this machine has no working DNS, so no new image can be
+# pulled. This is also the image the project already trusts and pins, so
+# reusing it adds no new supply-chain surface and no new image to fetch.
+#
+# Each endpoint is deliberately minimal: one SIP profile, one registering
+# gateway, one dialplan context whose only job is to answer and behave like a
+# cooperative test peer.
+#
+# Run with:
+#   docker compose -f infra/docker-compose.freeswitch-endpoints.yml up -d
+#
+# Secrets come from infra/.env (git-ignored) and are rendered into the live
+# configuration by each container's entrypoint. There are no defaults.
+#
+# TWO YAML TRAPS THIS FILE WAS BITTEN BY - both failed silently
+# 1. A key written in a service REPLACES the same key coming from a merge
+#    anchor; it does not append. Declaring `volumes:` in a service to add one
+#    extra mount therefore dropped every mount inherited from the anchor, and
+#    the container restarted with:
+#      /bin/sh: can't open '/opt/obd/entrypoint.sh': No such file or directory
+#    The volume lists below are therefore written out in full, per service.
+# 2. Two containers must never share a log directory. Both write
+#    freeswitch.log, freeswitch.xml.fsxml (the compiled config cache) and
+#    core.db, so a shared directory corrupts the configuration and produces
+#      Cannot Initialize [Cannot Open log directory or XML Root!]
+#    which looks like a config defect and is not one. Hence logs-1001 and
+#    logs-1002.
+
+name: obd-fs-endpoints
+
+# Shared, NON-volume settings. Volumes are deliberately excluded from this
+# anchor - see trap 1 above.
+x-endpoint: &endpoint
+  # Same pinned image as the platform switch - already present locally, so this
+  # compose file needs no registry access.
+  image: ghcr.io/patrickbaus/freeswitch-docker:1.11.1
+  restart: unless-stopped
+  cap_add:
+    - SYS_NICE
+  entrypoint: ["/bin/sh", "/opt/obd/entrypoint.sh"]
+  networks:
+    telephony:
+      aliases:
+        - obd-fs-endpoint
+  healthcheck:
+    test: ["CMD-SHELL", "fs_cli -p \"$$FREESWITCH_PASSWORD\" -x status 2>/dev/null | grep -q '^UP'"]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 40s
+  stop_grace_period: 30s
+
+services:
+  # Extension 1001.
+  endpoint-a:
+    <<: *endpoint
+    container_name: obd-fs-endpoint-1001
+    hostname: obd-fs-endpoint-1001
+    environment:
+      FREESWITCH_PASSWORD: ${ENDPOINT_ESL_PASSWORD:?set ENDPOINT_ESL_PASSWORD in infra/.env}
+      EXTENSION: "1001"
+      SIP_PASSWORD: ${SIP_1001_PASSWORD:?set SIP_1001_PASSWORD in infra/.env}
+      # The digits the endpoint emits as DTMF towards the platform switch, so
+      # the platform can be shown a known, reproducible digit sequence.
+      DTMF_DIGITS: ${ENDPOINT_DTMF_DIGITS:-0159#*}
+      ANSWER_HOLD_MS: ${ENDPOINT_ANSWER_HOLD_MS:-30000}
+    volumes:
+      - ./freeswitch-endpoint/conf/autoload_configs/sofia.conf.xml:/etc/freeswitch/autoload_configs/sofia.conf.xml:ro
+      - ./freeswitch-endpoint/conf/autoload_configs/acl.conf.xml:/etc/freeswitch/autoload_configs/acl.conf.xml:ro
+      - ./freeswitch-endpoint/conf/autoload_configs/event_socket.conf.xml.in:/opt/obd/event_socket.conf.xml.in:ro
+      - ./freeswitch-endpoint/conf/sip_profiles/obd-endpoint.xml.in:/opt/obd/obd-profile.xml.in:ro
+      - ./freeswitch-endpoint/conf/dialplan/obd-endpoint.xml.in:/opt/obd/obd-dialplan.xml.in:ro
+      - ./freeswitch-endpoint/scripts/entrypoint.sh:/opt/obd/entrypoint.sh:ro
+      - ./freeswitch-endpoint/logs-1001:/var/log/freeswitch
+    ports:
+      # ESL on loopback only. Published because Phase C has to read the
+      # ENDPOINT's own media statistics - "packets received" - in order to
+      # claim two-way audio rather than only one-way. It is a test fixture
+      # password from infra/.env, and it never leaves this machine.
+      - "127.0.0.1:8031:8021/tcp"
+      # SIP, loopback only, for inspection with a packet trace if ever needed.
+      - "127.0.0.1:5061:5060/udp"
+      - "127.0.0.1:5061:5060/tcp"
+
+  # Extension 1002. Identical, different extension, log dir and published ports.
+  endpoint-b:
+    <<: *endpoint
+    container_name: obd-fs-endpoint-1002
+    hostname: obd-fs-endpoint-1002
+    environment:
+      FREESWITCH_PASSWORD: ${ENDPOINT_ESL_PASSWORD:?set ENDPOINT_ESL_PASSWORD in infra/.env}
+      EXTENSION: "1002"
+      SIP_PASSWORD: ${SIP_1002_PASSWORD:?set SIP_1002_PASSWORD in infra/.env}
+      DTMF_DIGITS: ${ENDPOINT_DTMF_DIGITS:-0159#*}
+      ANSWER_HOLD_MS: ${ENDPOINT_ANSWER_HOLD_MS:-30000}
+    volumes:
+      - ./freeswitch-endpoint/conf/autoload_configs/sofia.conf.xml:/etc/freeswitch/autoload_configs/sofia.conf.xml:ro
+      - ./freeswitch-endpoint/conf/autoload_configs/acl.conf.xml:/etc/freeswitch/autoload_configs/acl.conf.xml:ro
+      - ./freeswitch-endpoint/conf/autoload_configs/event_socket.conf.xml.in:/opt/obd/event_socket.conf.xml.in:ro
+      - ./freeswitch-endpoint/conf/sip_profiles/obd-endpoint.xml.in:/opt/obd/obd-profile.xml.in:ro
+      - ./freeswitch-endpoint/conf/dialplan/obd-endpoint.xml.in:/opt/obd/obd-dialplan.xml.in:ro
+      - ./freeswitch-endpoint/scripts/entrypoint.sh:/opt/obd/entrypoint.sh:ro
+      - ./freeswitch-endpoint/logs-1002:/var/log/freeswitch
+    ports:
+      - "127.0.0.1:8032:8021/tcp"
+      - "127.0.0.1:5062:5060/udp"
+      - "127.0.0.1:5062:5060/tcp"
+
+networks:
+  telephony:
+    name: obd-telephony
+    driver: bridge
+    external: true

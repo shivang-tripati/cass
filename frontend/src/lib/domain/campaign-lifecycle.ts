@@ -145,12 +145,31 @@ export function hasAvailableTransition(from: CampaignStatus): boolean {
 /**
  * F4.1 — a campaign is NEVER moved by the execution engine.
  *
- * ## What F4.1 re-verified, and what it corrected
+ * ## B9 is now RESOLVED — INTENTIONAL (F5)
  *
- * F4 described the three engine-owned edges as reserved for "the future
- * execution engine", which was true of the code F4 read: the engine did not
- * exist yet. F4.1 re-audited the final backend, where a real engine now exists,
- * and established something more specific and more useful.
+ * F4.1 re-audited this and filed B9 as **MISSING PRODUCER**, citing the
+ * then-current `CampaignStatus` Javadoc: RUNNING/COMPLETED/FAILED were declared
+ * "aggregate rollups driven by the future execution engine", so a missing
+ * producer looked like an oversight. The backend has since rewritten that
+ * Javadoc and now states the opposite conclusion explicitly:
+ *
+ * > "It is **not** derived from executions: several executions may run for one
+ * > campaign, so no single execution could authoritatively set it."
+ * > "`RUNNING`, `COMPLETED` and `FAILED` are reserved execution-facts,
+ * > unreachable and not operator-settable. They are retained only because
+ * > `ck_campaigns_status` is a database CHECK constraint (V15) and they are part
+ * > of the public contract."
+ *
+ * So the producer is absent **by design**, and the reason given is a modelling
+ * fact rather than an oversight. F4.1's own §10 constraint applies: a producer
+ * was never to be added, because several executions can be in flight for one
+ * campaign and none could authoritatively set it.
+ *
+ * The consequence for this module is unchanged and now final: campaign status is
+ * operator-driven, execution status is engine-driven, and the three reserved
+ * edges stay excluded from every rendered control.
+ *
+ * ## What stays true regardless
  *
  * VERIFIED, exhaustively, in `src/main`:
  *
@@ -167,12 +186,6 @@ export function hasAvailableTransition(from: CampaignStatus): boolean {
  *  - `CampaignExecutionOrchestrator` and `OutboundDialService` inject
  *    `CampaignRepository` but only ever **read** it: for tenant-scoped
  *    existence, and for the `PAUSED` dispatch gate.
- *
- * So the three edges are reserved but **unperformed**: `SCHEDULED` campaigns
- * stay `SCHEDULED` indefinitely, and `RUNNING`/`COMPLETED`/`FAILED` are
- * reachable only by a manual API call that the service itself refuses. The
- * engine's real work is on the *execution* and *attempt* records, not the
- * campaign.
  *
  * ## Why this matters to a user
  *
@@ -248,12 +261,36 @@ export const CAMPAIGN_STATUS_DESCRIPTION: Readonly<
 > = {
   DRAFT: "Editable. Not yet scheduled, and never executable in this state.",
   SCHEDULED:
-    "Scheduled and eligible to run. Configuration is locked — return it to draft to make changes, which also stops it being executable. Nothing moves it forward automatically.",
-  RUNNING: "Marked as running. Configuration is locked.",
+    "Scheduled and eligible to run. Configuration is locked — return it to draft to make changes, which also stops it being executable. Nothing moves it forward automatically, and a campaign actively dialling still reads as scheduled.",
+  /**
+   * F5 CORRECTED THIS. The previous text was "Marked as running." — which reads
+   * as a state a campaign can be put into. It cannot.
+   *
+   * VERIFIED the current `CampaignStatus` Javadoc: RUNNING is a "reserved
+   * execution-fact, unreachable and not operator-settable", retained only
+   * because `ck_campaigns_status` is a database CHECK constraint. No API path
+   * writes it (`availableTransitions` subtracts every edge into it), so it is a
+   * value that can never be observed on a row this UI creates.
+   *
+   * The honest description therefore says the state is unreachable rather than
+   * describing what it "marked", because a user reading the old text would
+   * reasonably look for the control that produces it.
+   */
+  RUNNING:
+    "Reserved execution-fact, not reachable through the API. A campaign that is actively dialling still reads as scheduled — read its executions to see what is running.",
   PAUSED:
-    "Temporarily stopped. Pausing really does hold new calls: the engine re-queues queued attempts instead of dialling them. Configuration is locked, and this state cannot return to draft.",
-  COMPLETED: "Marked as finished. Only archiving remains.",
-  FAILED: "Marked as failed. Only archiving remains.",
+    "New dispatch is suspended. The engine holds queued attempts instead of dialling them, and established calls are not terminated. Configuration is locked, and this state cannot return to draft.",
+  /**
+   * F5 CORRECTED THIS, for the same reason as RUNNING. COMPLETED and FAILED have
+   * exactly one inbound edge each — `RUNNING -> COMPLETED` and
+   * `RUNNING -> FAILED` — and RUNNING is unreachable, so both are dead ends
+   * that no row can hold. The previous text ("Marked as finished. Only archiving
+   * remains.") described a reachable state with a live follow-up action.
+   */
+  COMPLETED:
+    "Reserved execution-fact, not reachable through the API. Whether a run finished or failed is read from its execution, not from the campaign.",
+  FAILED:
+    "Reserved execution-fact, not reachable through the API. Whether a run finished or failed is read from its execution, not from the campaign.",
   ARCHIVED: "Final. No further transitions exist.",
 };
 

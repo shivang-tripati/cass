@@ -19,6 +19,7 @@ import { FieldGroup } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { TextField } from "@/components/forms/text-field";
 import { toApiError } from "@/lib/api/error";
+import { applyServerFieldErrors } from "@/components/auth/server-field-errors";
 import type { SignInValues } from "@/lib/schemas/auth";
 import { signInSchema } from "@/lib/schemas/auth";
 import { useLogin } from "@/lib/session";
@@ -61,14 +62,18 @@ export function SignInForm() {
 
   function applyServerError(error: unknown) {
     const apiError = toApiError(error);
-    let mappedFieldCount = 0;
-    for (const fieldError of apiError.fieldErrors) {
-      const field = fieldError.field === "password" ? "password" : "email";
-      if (field in signInSchema.shape) {
-        form.setError(field, { message: fieldError.message });
-        mappedFieldCount += 1;
-      }
-    }
+    // F1: shared mapping. The remap keeps the existing intent — LoginRequest
+    // has exactly two fields, so anything that is not `password` is `email` —
+    // while the shared helper is what guarantees an unmappable field is dropped
+    // rather than attached to an arbitrary control.
+    const mappedFieldCount = applyServerFieldErrors(
+      apiError.fieldErrors,
+      Object.keys(signInSchema.shape),
+      (field, message) => {
+        form.setError(field as "email" | "password", { message });
+      },
+      (field) => (field === "password" ? "password" : "email"),
+    );
     if (mappedFieldCount > 0 && apiError.status === 400) return;
 
     setAlert({

@@ -5,7 +5,7 @@ import type {
   TenantResponse,
   TenantSignupPayload,
 } from "@/lib/api/contracts";
-import { unwrap } from "@/lib/api/auth";
+import { unwrap } from "@/lib/api/transport";
 import type { ApiResponse } from "@/lib/api/types";
 
 export function signupTenant(

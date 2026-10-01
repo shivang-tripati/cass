@@ -1,0 +1,107 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase C: the behaviour of a local SIP test endpoint.
+
+  TEMPLATE - rendered at container start by infra/freeswitch-endpoint/scripts/entrypoint.sh.
+
+  This is the entire "softphone application". When the platform switch calls
+  this endpoint, the endpoint:
+
+      1. ANSWERS                     -> the platform sees CHANNEL_ANSWER
+      2. sends a KNOWN DTMF sequence -> the platform sees CHANNEL_DTMF, with a
+                                         digit sequence this file chose, so the
+                                         platform's DTMF handling can be checked
+                                         against a known-good input
+      3. plays a prompt              -> proves media flows endpoint -> platform
+      4. WAITS                       -> stays answered and answered-back, so
+                                         media flows platform -> endpoint too
+      5. HANGS UP                    -> produces a real, voluntary hangup
+
+  The order matters. DTMF is sent over RTP, and RTP only flows after the
+  SDP has been negotiated and the channel answered, so the DTMF step must come
+  after "answer" and it must not be the last thing that happens.
+
+  MATCHING CONDITION
+  Phase E corrected this. The original condition matched on
+  ${sip_destination_user}, which is the user part of the REQUEST-URI. When the
+  platform originates through a gateway, the Request-URI carries the GATEWAY's
+  own identity rather than the number dialled - observed on this endpoint as:
+
+      New Channel sofia/obd-endpoint/FreeSWITCH@endpoint-b:5060
+      Processing FreeSWITCH <+15551230000>->1002 in context obd-endpoint
+      No Route, Aborting
+
+  The two values differ: the channel and Request-URI say FreeSWITCH, while
+  destination_number is 1002. So ^\d+$ could never match a gateway-originated
+  call, and the endpoint rejected a perfectly delivered INVITE with
+  NO_ROUTE_DESTINATION. ${destination_number} is the number actually dialled and
+  is what FreeSWITCH itself logs (->1002), so it is the correct thing to match.
+  It stays deliberately narrow: a real deployment would not answer every call.
+
+  WHY "wait" AND NOT "play_and_collect_digits"
+  play_and_collect_digits would test the endpoint's DTMF RECEIVER, not its
+  sender. Phase C needs the platform switch to be the receiver, so the endpoint
+  must generate the tones. Step 2 does that with send_dtmf.
+-->
+<context name="obd-endpoint">
+  <extension name="obd-endpoint-answer">
+    <!--
+      destination_number is the number actually dialled, and is what FreeSWITCH
+      logs (->1002). The previous condition used sip_destination_user, which for
+      a gateway-originated call is the GATEWAY's identity (FreeSWITCH), not the
+      number dialled, so it could never match. See MATCHING CONDITION above.
+
+      ONE condition, deliberately. An earlier attempt kept sip_destination_user
+      as a nested fallback with break="false" on the outer condition. That was
+      wrong: nested conditions are ANDed, so the extension still failed every
+      gateway call (destination_number matched, sip_destination_user did not) and
+      the endpoint rejected a perfectly delivered INVITE with NO_ROUTE_DESTINATION
+      - the same symptom as before, which is what made the mistake expensive.
+      Alternatives must be sibling extensions, or a single alternation
+      expression. destination_number alone is sufficient: it is set on every
+      inbound call, direct or gateway-originated.
+    -->
+    <condition field="${destination_number}" expression="^\d+$">
+      <!-- 1. answer -->
+      <action application="answer"/>
+
+      <!-- 2. emit a known DTMF sequence toward the platform switch -->
+      <action application="send_dtmf" data="@@DTMF_DIGITS@@"/>
+
+      <!-- 3. send audio toward the platform switch -->
+      <action application="playback" data="tone_stream://%(200,400,1000)"/>
+
+      <!-- 4. stay answered so the platform switch can send media to us too -->
+      <!--
+        `sleep`, NOT `wait`. Phase E.1 measured that `wait` is NOT a registered
+        application in this FreeSWITCH 1.11.1 build, while `sleep` (mod_dptools)
+        is. The registry has wait_for_answer and wait_for_silence, but no `wait`.
+
+        The failure mode was the expensive part. An unavailable application is
+        not reported as an error to the caller and does not fail the call
+        cleanly - FreeSWITCH aborts the channel:
+
+            [ERR] switch_core_session.c:2771 Invalid Application wait
+            [NOTICE] switch_core_session.c:2772 Hangup [CS_EXECUTE]
+                                                    [DESTINATION_OUT_OF_ORDER]
+
+        so the endpoint answered, ran send_dtmf and playback, then destroyed the
+        channel roughly 600 ms after answer. On the platform that surfaced as
+        commands against a channel that no longer existed:
+
+            api uuid_broadcast <uuid> <file> aleg -> -ERR invalid uuid
+            api uuid_kill <uuid> NORMAL_CLEARING  -> -ERR No such channel!
+            api uuid_dump <uuid>                  -> sometimes succeeds
+
+        which is what made this look like a uuid_broadcast or ESL command
+        contract problem for several phases. It was a typo-level defect in this
+        fixture that had been present since Phase C: the endpoint never actually
+        held a call open, it only ever survived long enough to answer.
+      -->
+      <action application="sleep" data="@@ANSWER_HOLD_MS@@"/>
+
+      <!-- 5. hang up voluntarily: NORMAL_CLEARING, not an error -->
+      <action application="hangup"/>
+    </condition>
+  </extension>
+</context>

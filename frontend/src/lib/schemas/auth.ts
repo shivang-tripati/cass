@@ -12,9 +12,24 @@ export const signInSchema = z.object({
 });
 export type SignInValues = z.infer<typeof signInSchema>;
 
-/** Password rules from PasswordPolicy (length-only, NIST-aligned). */
+/** Password length rules for an END USER changing their own password.
+ *
+ * VERIFIED against `security/PasswordPolicy` (length-only, NIST-aligned). */
 export const PASSWORD_MIN = 8;
 export const PASSWORD_MAX = 128;
+
+/**
+ * F1: a SEPARATE minimum for provisioned administrator/agent credentials.
+ *
+ * VERIFIED against `tenant/dto/TenantAdminInput`, `reseller/dto/AdminAccountInput`
+ * and `tenant/dto/CreateAgentRequest`, each of which is
+ * `@Size(min = 12, max = 128)`. F0 reused `PASSWORD_MIN` (8) for the tenant
+ * signup, reseller signup and reseller-create forms, so those forms accepted an
+ * 8–11 character password that the server then rejected with a 400 the user
+ * could not act on. Provisioning and self-service change are genuinely
+ * different policies and now have different constants.
+ */
+export const ADMIN_PASSWORD_MIN = 12;
 
 const newPassword = z
   .string()

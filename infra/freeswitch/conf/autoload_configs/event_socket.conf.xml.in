@@ -1,0 +1,81 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase B live FreeSWITCH environment
+  mod_event_socket (ESL) configuration.
+
+  This file is a TEMPLATE. It is rendered at container start by
+  infra/freeswitch/scripts/entrypoint.sh, which substitutes the
+  FREESWITCH_PASSWORD environment variable into the single marked
+  parameter below. The rendered file is written to
+  /etc/freeswitch/autoload_configs/event_socket.conf.xml.
+
+  WHY A TEMPLATE: the stock image ships a well-known default credential and
+  listens on every interface. FreeSWITCH XML has no reliable environment
+  interpolation for this value, so rendering at start-up is what keeps any
+  credential - including a weak placeholder - out of the repository.
+
+  IMPORTANT - EDITING RULES FOR THIS FILE:
+    1. The substitution token must appear EXACTLY ONCE, in the password
+       parameter. The entrypoint replaces every occurrence, so a second
+       occurrence anywhere (including in this comment) would be replaced
+       too, writing the secret into the rendered file as prose.
+    2. Never name the stock default credential or the platform's dev default
+       credential in this file. They are named in .env.example and in the
+       entrypoint, which is where that validation belongs. Naming them here
+       makes "is the stock credential still active?" checks ambiguous.
+
+  What the Java platform needs (per the VB-6E ESL contract):
+    - TCP 8021
+    - an unprompted "Content-Type: auth/request" banner followed by
+      "auth <password>" -> "Reply-Text: +OK accepted"
+    - "event plain <10 event names>"
+    - bgapi / uuid_broadcast / uuid_kill / uuid_bridge
+-->
+<configuration name="event_socket.conf" description="OBD Phase B Event Socket">
+
+  <settings>
+    <param name="nat-map" value="false"/>
+
+    <!--
+      Listen on all container interfaces, NOT on 127.0.0.1.
+
+      PHASE C CORRECTION. Phase B set 127.0.0.1 here, reasoning that
+      loopback inside the container plus a loopback-published host port
+      would be the narrowest possible exposure. That is wrong under Docker:
+      a published port is delivered to the CONTAINER's network address, not
+      to its loopback interface. With listen-ip=127.0.0.1 the published
+      127.0.0.1:8021 mapping accepted the TCP connection and then closed it
+      with zero bytes, because there was no listener at the backend.
+
+      Evidence (Phase C, local):
+        netstat inside container   127.0.0.1:8021   <- loopback only
+        host -> 127.0.0.1:8021   recv 0 bytes       <- broken
+        control: SIP is bound to 172.25.0.2:5060 (container address) and
+                 host -> 127.0.0.1:5060 returns "SIP/2.0 200 OK"  <- works
+        inside container, 127.0.0.1:8021 returns the auth banner <- works
+      So the container-address binding is what makes a published port work.
+
+      The host-side exposure is unchanged and is still the security boundary:
+      Compose publishes 127.0.0.1:8021, so the listener is reachable from
+      this machine only. What widens is reachability from other containers on
+      the obd-telephony network - which is intended, because a containerised
+      Java application is meant to reach ESL at freeswitch:8021.
+    -->
+    <param name="listen-ip" value="0.0.0.0"/>
+
+    <param name="listen-port" value="8021"/>
+
+    <!-- Rendered from the environment at container start; never committed. -->
+    <param name="password" value="@@FREESWITCH_PASSWORD@@"/>
+
+    <!--
+      Defence in depth: even on loopback, restrict inbound ESL peers to the
+      private/loopback ranges defined in acl.conf.xml (obd-dev-acl).
+    -->
+    <param name="apply-inbound-acl" value="obd-dev-acl"/>
+
+    <!-- Refuse to start the listener rather than silently continuing. -->
+    <param name="stop-on-bind-error" value="true"/>
+  </settings>
+
+</configuration>

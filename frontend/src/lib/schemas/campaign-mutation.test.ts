@@ -434,3 +434,285 @@ describe("campaignTypePlaysMedia stays in step with the enum", () => {
     expect(canUseTts.every((type) => !campaignTypePlaysMedia(type))).toBe(true);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* F5.1 — optional references: "" means absent, and must reach the wire as such */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The defect these tests exist for, proven against the shipped schemas before
+ * the fix.
+ *
+ * Every reference control is a `<Select>` whose first option is an empty
+ * sentinel, and both dialogs seed an unset reference with `""`:
+ *
+ *  - `create-campaign-dialog`'s `EMPTY_VALUES`: `contactGroupId: ""`,
+ *    `didId: ""`, `audioAssetId: ""`
+ *  - `edit-campaign-dialog`'s `values`: `campaign.contactGroupId ?? ""`,
+ *    `campaign.didId ?? ""`, `campaign.audioAssetId ?? ""`
+ *
+ * Against `z.string().uuid().optional().nullable()` that empty state FAILED:
+ *
+ *  - a CONNECT_BY_AGENT or MISSED_CALL campaign has no audio asset, so its seed
+ *    is `audioAssetId: ""` -> "Invalid UUID" -> **the edit form could never be
+ *    submitted at all**, for exactly the campaign types the F4/F5 pickers were
+ *    built for;
+ *  - a PLAYFILE campaign with no DID and no contact group failed the same way;
+ *  - and "no reference" could never be selected, because the "— None —" option
+ *    writes the same `""` the schema rejected.
+ *
+ * The backend has always supported all three. VERIFIED `UpdateCampaignRequest`:
+ * "PUT semantics: the configuration blocks are replaced wholesale - omitting an
+ * optional block clears it", and `CampaignMapper.applyCommon` assigns the
+ * references unconditionally (`entity.setDidId(didId)`), so an omitted reference
+ * deserialises to null and clears.
+ *
+ * The frontend was refusing a state the backend explicitly permits.
+ */
+
+const CBA_TYPE_CONFIG = {
+  connectByAgent: {
+    queueId: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    selectionStrategy: "LEAST_ACTIVE_RESERVATIONS",
+    ringDurationSeconds: 60,
+  },
+} as const;
+
+/** VERIFIED AgentSelectionStrategy has exactly one constant. */
+const CONNECT_BY_AGENT_CREATE = {
+  name: "Weekday outbound",
+  campaignType: "CONNECT_BY_AGENT",
+  runMode: "ONE_TIME",
+  typeConfig: CBA_TYPE_CONFIG,
+} as const;
+
+describe("optional references may be absent", () => {
+  it("create accepts a CONNECT_BY_AGENT campaign with no audience, DID or audio", () => {
+    // The realistic shape of this campaign: it plays no media and the operator
+    // chose neither an audience nor a number. Rejected before the fix.
+    const result = createCampaignSchema.safeParse({
+      ...CONNECT_BY_AGENT_CREATE,
+      contactGroupId: "",
+      didId: "",
+      audioAssetId: "",
+      callOnWhitelistNumbers: false,
+    });
+    expect(
+      result.success,
+      result.success ? "" : JSON.stringify(result.error.issues),
+    ).toBe(true);
+  });
+
+  it("create accepts a MISSED_CALL campaign, which has no audio by definition", () => {
+    const result = createCampaignSchema.safeParse({
+      name: "Missed call",
+      campaignType: "MISSED_CALL",
+      runMode: "ONE_TIME",
+      contactGroupId: "",
+      didId: "",
+      audioAssetId: "",
+      typeConfig: { missedCall: { ringDurationSeconds: 30 } },
+      callOnWhitelistNumbers: false,
+    });
+    expect(
+      result.success,
+      result.success ? "" : JSON.stringify(result.error.issues),
+    ).toBe(true);
+  });
+
+  it("update accepts a CONNECT_BY_AGENT campaign carrying no audio reference", () => {
+    // The exact regression: `campaign.audioAssetId ?? ""` seeds "" for a type
+    // that never has one, which made the edit form unsubmittable.
+    const result = updateCampaignSchema.safeParse({
+      name: "Weekday outbound",
+      runMode: "ONE_TIME",
+      contactGroupId: "",
+      didId: "",
+      audioAssetId: "",
+      typeConfig: CBA_TYPE_CONFIG,
+    });
+    expect(
+      result.success,
+      result.success ? "" : JSON.stringify(result.error.issues),
+    ).toBe(true);
+  });
+
+  it("update accepts a PLAYFILE campaign that has a DID but no contact group", () => {
+    const result = updateCampaignSchema.safeParse({
+      name: "Reminder",
+      runMode: "ONE_TIME",
+      contactGroupId: "",
+      didId: "22222222-2222-4222-8222-222222222222",
+      audioAssetId: "33333333-3333-4333-8333-333333333333",
+      contentMode: "AUDIO",
+      typeConfig: undefined,
+    });
+    expect(
+      result.success,
+      result.success ? "" : JSON.stringify(result.error.issues),
+    ).toBe(true);
+  });
+
+  it("treats null and undefined as absent too, not just the empty string", () => {
+    // The edit dialog seeds `?? ""`, but a programmatic caller may send null.
+    for (const absent of [null, undefined]) {
+      const result = updateCampaignSchema.safeParse({
+        name: "Weekday outbound",
+        runMode: "ONE_TIME",
+        contactGroupId: absent,
+        didId: absent,
+        audioAssetId: absent,
+        typeConfig: CBA_TYPE_CONFIG,
+      });
+      expect(result.success, String(absent)).toBe(true);
+    }
+  });
+});
+
+describe("absent references must not weaken the content rules", () => {
+  it("still refuses a media-playing campaign with no audio asset", () => {
+    // `!data.audioAssetId` is true for "", so the refine still fires. Allowing
+    // the empty sentinel must not open a hole in the AUDIO requirement.
+    const result = updateCampaignSchema.safeParse({
+      name: "Reminder",
+      runMode: "ONE_TIME",
+      contactGroupId: "",
+      didId: "",
+      audioAssetId: "",
+      contentMode: "AUDIO",
+      typeConfig: undefined,
+    });
+    expect(result.success).toBe(false);
+    expect(
+      result.success ? [] : result.error.issues.map((i) => i.message),
+    ).toContain("AUDIO content requires exactly one audio asset reference.");
+  });
+
+  it("still refuses a non-empty value that is not a UUID", () => {
+    // The sentinel is exactly "". Anything else must still be validated.
+    const result = updateCampaignSchema.safeParse({
+      name: "Weekday outbound",
+      runMode: "ONE_TIME",
+      contactGroupId: "not-a-uuid",
+      didId: "",
+      audioAssetId: "",
+      typeConfig: CBA_TYPE_CONFIG,
+    });
+    expect(result.success).toBe(false);
+    expect(result.success ? [] : result.error.issues.map((i) => i.message)).toContain(
+      "Must be a UUID.",
+    );
+  });
+
+  it("still requires a UUID for the queue inside CONNECT_BY_AGENT typeConfig", () => {
+    // The queue is validated by `campaignTypeConfigSchema`, which was not
+    // loosened — a bad queue id must still fail before the request is sent.
+    const result = createCampaignSchema.safeParse({
+      ...CONNECT_BY_AGENT_CREATE,
+      contactGroupId: "",
+      didId: "",
+      audioAssetId: "",
+      callOnWhitelistNumbers: false,
+      typeConfig: {
+        connectByAgent: {
+          queueId: "not-a-uuid",
+          selectionStrategy: "LEAST_ACTIVE_RESERVATIONS",
+          ringDurationSeconds: 60,
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("an absent reference reaches the wire as absent, never as an empty string", () => {
+  // The second half of the defect: `values.didId ?? undefined` is the identity
+  // for null/undefined but NOT for "", because "" is not nullish. The builder
+  // passed the sentinel straight through, producing `{"didId":""}` for a UUID
+  // field — which Jackson rejects with an InvalidFormatException, i.e. a 400
+  // about a malformed id rather than about the reference being cleared.
+  const wire = (payload: Record<string, unknown>): string => JSON.stringify(payload);
+
+  it("update omits a cleared DID entirely, so the backend clears it", () => {
+    const parsed = updateCampaignSchema.parse({
+      name: "Reminder",
+      runMode: "ONE_TIME",
+      contactGroupId: "",
+      didId: "",
+      audioAssetId: "33333333-3333-4333-8333-333333333333",
+      contentMode: "AUDIO",
+      typeConfig: undefined,
+    });
+    const payload = toUpdateCampaignPayload(parsed) as unknown as Record<string, unknown>;
+    expect(payload.didId).toBeUndefined();
+    // An undefined value is dropped by JSON.stringify, so the key never reaches
+    // the server and the backend's PUT semantics clear the reference.
+    expect(wire(payload)).not.toMatch(/"didId":""/);
+  });
+
+  it("create omits absent references too", () => {
+    const parsed = createCampaignSchema.parse({
+      ...CONNECT_BY_AGENT_CREATE,
+      contactGroupId: "",
+      didId: "",
+      audioAssetId: "",
+      callOnWhitelistNumbers: false,
+    });
+    const payload = toCreateCampaignPayload(parsed) as unknown as Record<string, unknown>;
+    expect(payload.didId).toBeUndefined();
+    expect(payload.contactGroupId).toBeUndefined();
+    expect(payload.audioAssetId).toBeUndefined();
+    expect(wire(payload)).not.toMatch(/:\s*""/);
+  });
+
+  it("still sends a real reference unchanged", () => {
+    const parsed = updateCampaignSchema.parse({
+      name: "Reminder",
+      runMode: "ONE_TIME",
+      contactGroupId: "11111111-1111-4111-8111-111111111111",
+      didId: "22222222-2222-4222-8222-222222222222",
+      audioAssetId: "33333333-3333-4333-8333-333333333333",
+      contentMode: "AUDIO",
+      typeConfig: undefined,
+    });
+    const payload = toUpdateCampaignPayload(parsed);
+    expect(payload.didId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(payload.contactGroupId).toBe("11111111-1111-4111-8111-111111111111");
+    expect(payload.audioAssetId).toBe("33333333-3333-4333-8333-333333333333");
+  });
+
+  it("preserves a reference when only a sibling reference is absent", () => {
+    // Preservation and clearing are independent: dropping the contact group must
+    // not take the DID with it.
+    const parsed = updateCampaignSchema.parse({
+      name: "Reminder",
+      runMode: "ONE_TIME",
+      contactGroupId: "",
+      didId: "22222222-2222-4222-8222-222222222222",
+      audioAssetId: "33333333-3333-4333-8333-333333333333",
+      contentMode: "AUDIO",
+      typeConfig: undefined,
+    });
+    const payload = toUpdateCampaignPayload(parsed);
+    expect(payload.contactGroupId).toBeUndefined();
+    expect(payload.didId).toBe("22222222-2222-4222-8222-222222222222");
+  });
+
+  it("never emits an empty string for any optional reference", () => {
+    for (const absent of ["", null, undefined]) {
+      const parsed = updateCampaignSchema.parse({
+        name: "Reminder",
+        runMode: "ONE_TIME",
+        contactGroupId: absent,
+        didId: absent,
+        audioAssetId: "33333333-3333-4333-8333-333333333333",
+        contentMode: "AUDIO",
+        typeConfig: undefined,
+      });
+      const payload = toUpdateCampaignPayload(parsed) as unknown as Record<string, unknown>;
+      for (const field of ["contactGroupId", "didId", "audioAssetId", "ttsTemplateId"]) {
+        expect(payload[field], `${field} for ${String(absent)}`).not.toBe("");
+      }
+    }
+  });
+});

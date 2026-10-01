@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { PASSWORD_MAX, PASSWORD_MIN } from "@/lib/schemas/auth";
+import { ADMIN_PASSWORD_MIN, PASSWORD_MAX } from "@/lib/schemas/auth";
 
 /**
  * Client-side schemas for the anonymous self-signup contracts.
@@ -33,7 +33,10 @@ const adminEmail = z.email("Enter a valid email address.").max(255);
 
 const adminPassword = z
   .string()
-  .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters.`)
+  .min(
+    ADMIN_PASSWORD_MIN,
+    `Password must be at least ${ADMIN_PASSWORD_MIN} characters.`,
+  )
   .max(PASSWORD_MAX, `Password must be at most ${PASSWORD_MAX} characters.`);
 
 /** POST /api/v1/account/signup/tenant — admin is mandatory. */
@@ -85,7 +88,7 @@ export const resellerSignupSchema = z
         message:
           v.adminPassword === ""
             ? "Administrator password is required."
-            : `Password must be between ${PASSWORD_MIN} and ${PASSWORD_MAX} characters.`,
+            : `Password must be between ${ADMIN_PASSWORD_MIN} and ${PASSWORD_MAX} characters.`,
       });
     }
   });

@@ -10,26 +10,35 @@ import {
   Users2Icon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Capability } from "@/lib/auth/capabilities";
+import type { AuthenticatedUserResponse } from "@/lib/api/contracts";
+import { Capability, hasAnyCapability } from "@/lib/auth/capabilities";
+import type { OperatingScope } from "@/lib/auth/operating-context";
 
 /**
- * Primary platform navigation with capability-based visibility.
- * Each item declares the capability required to display it.
- * Backend remains the authorization authority - this is UX only.
+ * Primary navigation with capability-based visibility.
+ *
+ * Each item declares the capability required to display it. Navigation hiding is
+ * NOT authorization — it only avoids offering a link that would 403. The
+ * backend authorises every request independently.
+ *
+ * F1: the scope test now reads the same derived scope as the rest of the app
+ * (`OperatingScope`) instead of comparing `homeType` against three separate
+ * literals. `homeType === null` still means platform scope, because
+ * `OrganizationalHomeType` has no `PLATFORM` constant.
  */
 export interface NavItem {
   title: string;
   url: string;
   icon: LucideIcon;
   requiredCapabilities?: Capability[];
-  /** Optional scope requirement (platform/reseller/tenant) for coarse filtering. */
-  requiredScope?: "platform" | "reseller" | "tenant";
+  /** Optional scope requirement for coarse filtering. */
+  requiredScope?: OperatingScope;
 }
 
 export const PLATFORM_NAV_ITEMS: readonly NavItem[] = [
   { title: "Users", url: "/users", icon: UsersIcon, requiredCapabilities: [Capability.USER_VIEW] },
-  { title: "Tenants", url: "/tenants", icon: BuildingIcon, requiredCapabilities: [Capability.TENANT_VIEW], requiredScope: "platform" },
-  { title: "Resellers", url: "/resellers", icon: StoreIcon, requiredCapabilities: [Capability.RESELLER_VIEW], requiredScope: "platform" },
+  { title: "Tenants", url: "/tenants", icon: BuildingIcon, requiredCapabilities: [Capability.TENANT_VIEW], requiredScope: "PLATFORM" },
+  { title: "Resellers", url: "/resellers", icon: StoreIcon, requiredCapabilities: [Capability.RESELLER_VIEW], requiredScope: "PLATFORM" },
   { title: "DIDs", url: "/dids", icon: PhoneIcon, requiredCapabilities: [Capability.DID_VIEW] },
   { title: "Campaigns", url: "/campaigns", icon: MegaphoneIcon, requiredCapabilities: [Capability.CAMPAIGN_VIEW] },
   { title: "Contact Groups", url: "/contact-groups", icon: Users2Icon, requiredCapabilities: [Capability.CONTACT_VIEW] },
@@ -44,33 +53,38 @@ export function findNavItem(pathname: string): NavItem | undefined {
     .find((item) => pathname === item.url || pathname.startsWith(`${item.url}/`));
 }
 
-/**
- * Filters navigation items based on the user's capabilities and scope.
- */
-export function getVisibleNavItems(user: import("@/lib/api/contracts").AuthenticatedUserResponse | null | undefined): NavItem[] {
+/** Maps a `/me` payload onto the operating scope.
+ *
+ * Exported so navigation and `useOperatingContext` cannot drift apart; the
+ * derivation itself lives in `@/lib/auth/operating-context`. */
+export function scopeOf(
+  user: AuthenticatedUserResponse | null | undefined,
+): OperatingScope | null {
+  if (!user) return null;
+  if (user.homeType === "TENANT") return "TENANT";
+  if (user.homeType === "RESELLER") return "RESELLER";
+  return "PLATFORM";
+}
+
+/** Filters navigation items by capability AND, when declared, by scope. */
+export function getVisibleNavItems(
+  user: AuthenticatedUserResponse | null | undefined,
+): NavItem[] {
   if (!user) return [];
-  
+
+  const scope = scopeOf(user);
+
   return PLATFORM_NAV_ITEMS.filter((item) => {
-    // Check capability requirement
-    if (item.requiredCapabilities && item.requiredCapabilities.length > 0) {
-      const hasCap = item.requiredCapabilities.some((cap) => user.capabilities?.includes(cap));
-      if (!hasCap) return false;
+    if (
+      item.requiredCapabilities &&
+      item.requiredCapabilities.length > 0 &&
+      !hasAnyCapability(user, item.requiredCapabilities)
+    ) {
+      return false;
     }
-    
-    // Check scope requirement
-    if (item.requiredScope) {
-      if (item.requiredScope === "platform" && user.homeType !== null) {
-        // Platform-only items (Tenants, Resellers) only visible to platform users
-        return false;
-      }
-      if (item.requiredScope === "reseller" && user.homeType !== "RESELLER") {
-        return false;
-      }
-      if (item.requiredScope === "tenant" && user.homeType !== "TENANT") {
-        return false;
-      }
+    if (item.requiredScope && item.requiredScope !== scope) {
+      return false;
     }
-    
     return true;
   });
 }

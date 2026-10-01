@@ -34,6 +34,7 @@ import { signupReseller } from "@/lib/api/signup";
 import type { ResellerSignupValues } from "@/lib/schemas/signup";
 import { resellerSignupSchema } from "@/lib/schemas/signup";
 import { toSignupFormFieldKey } from "@/components/auth/signup-error-mapping";
+import { applyServerFieldErrors } from "@/components/auth/server-field-errors";
 
 interface FormAlert {
   title: string;
@@ -97,17 +98,16 @@ export function ResellerSignupForm() {
 
   function applyServerError(error: unknown) {
     const apiError = toApiError(error);
-    let mapped = false;
-    for (const fieldError of apiError.fieldErrors) {
-      const key = toSignupFormFieldKey(fieldError.field);
-      if (key in resellerSignupSchema.shape) {
-        form.setError(key as keyof ResellerSignupValues, {
-          message: fieldError.message,
-        });
-        mapped = true;
-      }
-    }
-    if (mapped && apiError.status === 400) return;
+    // F1: shared mapping, which also DROPS a field this form does not declare.
+    const mapped = applyServerFieldErrors(
+      apiError.fieldErrors,
+      Object.keys(resellerSignupSchema.shape),
+      (field, message) => {
+        form.setError(field as keyof ResellerSignupValues, { message });
+      },
+      toSignupFormFieldKey,
+    );
+    if (mapped > 0 && apiError.status === 400) return;
 
     setAlert({ title: apiError.message });
   }

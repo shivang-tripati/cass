@@ -4,7 +4,7 @@ import type {
   CreateResellerPayload,
   UpdateResellerPayload,
 } from "@/lib/api/contracts";
-import { PASSWORD_MAX, PASSWORD_MIN } from "@/lib/schemas/auth";
+import { ADMIN_PASSWORD_MIN, PASSWORD_MAX } from "@/lib/schemas/auth";
 
 /** Backend constraints verified against reseller DTOs. */
 export const RESELLER_NAME_MAX = 150;
@@ -87,7 +87,7 @@ const adminEmail = z.email("Enter a valid email address.").max(255);
 
 const adminPassword = z
   .string()
-  .min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters.`)
+  .min(ADMIN_PASSWORD_MIN, `Password must be at least ${ADMIN_PASSWORD_MIN} characters.`)
   .max(PASSWORD_MAX, `Password must be at most ${PASSWORD_MAX} characters.`);
 
 /**
@@ -130,7 +130,7 @@ export const createResellerSchema = z
         message:
           v.adminPassword === ""
             ? "Administrator password is required."
-            : `Password must be between ${PASSWORD_MIN} and ${PASSWORD_MAX} characters.`,
+            : `Password must be between ${ADMIN_PASSWORD_MIN} and ${PASSWORD_MAX} characters.`,
       });
     }
   });

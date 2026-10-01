@@ -4,7 +4,7 @@ import type {
   ResellerResponse,
   UpdateResellerPayload,
 } from "@/lib/api/contracts";
-import { unwrap } from "@/lib/api/auth";
+import { sendVoid, unwrap } from "@/lib/api/transport";
 import type {
   ApiResponse,
   LifecycleStatus,
@@ -113,6 +113,6 @@ export function createReseller(
 }
 
 /** Soft-deletes a reseller. Bare 204 — no envelope to unwrap. */
-export async function deleteReseller(resellerId: string): Promise<void> {
-  await api.delete(`/resellers/${resellerId}`);
+export function deleteReseller(resellerId: string): Promise<void> {
+  return sendVoid(api.delete(`/resellers/${resellerId}`));
 }

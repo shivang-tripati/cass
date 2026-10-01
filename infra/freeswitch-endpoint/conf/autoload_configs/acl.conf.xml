@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase C: network ACLs for a local SIP test endpoint.
+
+  The endpoint needs this because its event_socket.conf.xml sets
+  apply-inbound-acl="obd-dev-acl". An ACL named there but not defined here is
+  not an error FreeSWITCH reports usefully - it leaves the listener effectively
+  unfiltered - so the list is defined rather than referenced into the void.
+
+  The policy is deliberately identical to the platform switch's, for the same
+  reason: the stock file relies on auto-generated lists (rfc1918.auto,
+  loopback.auto, ...) derived from the interfaces the process sees, and inside a
+  container that is a single synthetic eth0, which makes the effective policy an
+  accident of Docker's network numbering. Explicit is reviewable.
+
+  Docker bridge networks are allocated from 172.17.0.0/16 upwards, so
+  172.16.0.0/12 covers the default bridge and every compose-created network,
+  including obd-telephony. Loopback is allowed because the in-container
+  fs_cli healthcheck connects over it.
+
+  NOTE: replacing this file removes the stock "domains" list, so no
+  configuration may reference it. The stock directory and dialplan in this image
+  DO reference $${domain}, so that list is retained here exactly as the
+  platform switch's copy retains it.
+-->
+<configuration name="acl.conf" description="OBD Phase C Network Lists">
+
+  <network-lists>
+
+    <list name="obd-dev-acl" default="deny">
+      <node type="allow" cidr="127.0.0.1/32"/>
+      <node type="allow" cidr="::1/128"/>
+      <node type="allow" cidr="10.0.0.0/8"/>
+      <node type="allow" cidr="172.16.0.0/12"/>
+      <node type="allow" cidr="192.168.0.0/16"/>
+    </list>
+
+    <!-- Retained for the stock directory/dialplan, which still reference
+         $${domain}. Read-only in practice: it grants nothing by address. -->
+    <list name="domains" default="deny">
+      <node type="allow" domain="$${domain}"/>
+    </list>
+
+  </network-lists>
+
+</configuration>

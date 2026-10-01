@@ -186,8 +186,28 @@ export type DidCapability = "VOICE_OUTBOUND";
 /** GET /api/v1/dids, /api/v1/dids/{id} */
 export interface DidResponse {
   id: string;
-  tenantId: string;
-  resellerId: string;
+  /**
+   * F5 CORRECTED THIS — it was typed `string`, which is unsound.
+   *
+   * VERIFIED `DidEntity`: `@Column(name = "tenant_id") UUID tenantId` with no
+   * `nullable = false`, documented "Tenant currently using the DID; null while
+   * unassigned." So an AVAILABLE DID genuinely serialises `null` here.
+   *
+   * This is NOT hypothetical for the campaign picker: `AllocationState`'s own
+   * Javadoc says "AVAILABLE numbers may sit in the platform or reseller pool;
+   * ASSIGNED numbers belong to exactly one tenant (enforced by
+   * `ck_dids_assigned_requires_tenant`)". So an AVAILABLE (pool) DID has
+   * `tenantId = null`, and `CampaignResourceValidationService.validateDid`
+   * queries `...AndTenantId(didId, campaignTenantId, ...)` — a pool DID can never
+   * match any tenant and is therefore **never** usable as a campaign DID.
+   *
+   * The null is kept rather than coerced to `""`: an empty string is a
+   * syntactically valid tenant id that matches nothing, which would turn a
+   * meaningful "no owner" into a silent comparison failure.
+   */
+  tenantId: string | null;
+  /** VERIFIED `DidEntity`: "null for platform-pool numbers." Same reasoning. */
+  resellerId: string | null;
   e164Number: string;
   countryCode: string;
   areaCode: string | null;
@@ -778,6 +798,28 @@ export type CampaignTypeConfig =
   | ConnectByAgentTypeConfig
   | MissedCallTypeConfig;
 
+/**
+ * F5 ADDED — the queue a CONNECT_BY_AGENT campaign currently references, or
+ * `null` when it references none.
+ *
+ * Needed because the campaign stores the queue INSIDE `typeConfig` rather than
+ * as a top-level field (unlike `didId`), so a caller that has to reason about
+ * "which queue is this campaign using" has to narrow the union first. Reading
+ * `typeConfig.connectByAgent.queueId` directly would need a cast, and a cast is
+ * how a `PLAYFILE` campaign ends up rendering a queue row.
+ *
+ * This narrows by discriminant on the real union member rather than asserting,
+ * so a non-CONNECT_BY_AGENT config simply yields `null`.
+ */
+export function connectByAgentQueueId(
+  typeConfig: CampaignTypeConfig | null | undefined,
+): string | null {
+  if (!typeConfig || typeof typeConfig !== "object") return null;
+  if (!("connectByAgent" in typeConfig)) return null;
+  const queueId: unknown = typeConfig.connectByAgent?.queueId;
+  return typeof queueId === "string" && queueId.length > 0 ? queueId : null;
+}
+
 /* -------------------- Campaign integration configuration ------------------ */
 
 /** com.shivang.obd.campaign.config.WebhookEvent — the PUBLIC event vocabulary.
@@ -1009,6 +1051,24 @@ export interface CampaignExecutionResponse {
   startedAt: string | null;
   completedAt: string | null;
   failureReason: string | null;
+  /**
+   * VERIFIED (VB-8H, resolves F4.1's blocker B10): why this execution has not
+   * started yet, or `null` when that question does not apply.
+   *
+   * The backend derives this on read and never persists it
+   * (`CampaignExecutionService.deriveDeferredReason`). It is non-null ONLY while
+   * `status === "REQUESTED"`, because an execution can only be *created* while
+   * its campaign is ready — so the single reason one can still be `REQUESTED` is
+   * that the campaign has since left the executable set (`PAUSED` being the
+   * ordinary case). It is deliberately `null` for `RUNNING` and for every
+   * terminal status, so it can never be mistaken for a second `failureReason`.
+   *
+   * F4.1 filed B10 because a `REQUESTED` execution gave the user no way to tell
+   * "queued, will start shortly" from "deferred, waiting on the campaign". This
+   * field is the backend's own answer, so the UI must render it rather than
+   * guessing — and must NOT infer it from campaign status locally.
+   */
+  deferredReason: string | null;
 }
 
 /** com.shivang.obd.campaign.CallAttemptStatus */

@@ -3,7 +3,7 @@ import type {
   UpdateUserRequest,
   UserResponse,
 } from "@/lib/api/contracts";
-import { unwrap } from "@/lib/api/auth";
+import { unwrap } from "@/lib/api/transport";
 import type { ApiResponse, LifecycleStatus, PaginationMetadata } from "@/lib/api/types";
 
 /**

@@ -132,6 +132,52 @@ export const retryPolicyConfigSchema = z
 export type RetryPolicyConfigValues = z.infer<typeof retryPolicyConfigSchema>;
 
 /** Campaign creation schema. */
+/**
+ * F5.1 ADDED — an OPTIONAL reference id in a campaign form.
+ *
+ * ## Why `""` is accepted
+ *
+ * Every campaign reference control is a `<Select>` whose first option is an
+ * empty sentinel ("— None —", value `""`), and every form seeds an unset
+ * reference with `""`: VERIFIED `create-campaign-dialog`'s `EMPTY_VALUES` and
+ * `edit-campaign-dialog`'s `values` both write `contactGroupId: ""`,
+ * `didId: ""`, `audioAssetId: ""`.
+ *
+ * A bare `z.string().uuid()` therefore rejected the form's own empty state, and
+ * this was not theoretical. Proven against the shipped schemas:
+ *
+ *  - a CONNECT_BY_AGENT or MISSED_CALL campaign has no audio asset, so its seed
+ *    is `audioAssetId: ""` -> "Invalid UUID" -> the edit form can never submit;
+ *  - a PLAYFILE campaign with no DID and no contact group fails the same way;
+ *  - so "no reference" was unselectable and un-savable, while the BACKEND
+ *    supports clearing: VERIFIED `UpdateCampaignRequest` is documented
+ *    "PUT semantics: the configuration blocks are replaced wholesale - omitting
+ *    an optional block clears it", and `CampaignMapper.applyCommon` assigns
+ *    `entity.setDidId(didId)` unconditionally, so a null clears the reference.
+ *
+ * So the frontend was refusing a state the backend explicitly permits.
+ *
+ * ## Why this does not weaken the content rule
+ *
+ * The `AUDIO requires exactly one audio asset reference` refine tests
+ * `!data.audioAssetId`, and `""` is falsy, so it still fires. A media-playing
+ * campaign still cannot be saved without a real asset; only the genuinely
+ * optional references gain an "absent" representation.
+ *
+ * ## Why the wire never sees `""`
+ *
+ * `optionalReferenceId` accepts `""`, but `toCreateCampaignPayload` /
+ * `toUpdateCampaignPayload` normalise it to `undefined`, so the key is omitted
+ * rather than sent as an empty string for a `UUID` field.
+ */
+const optionalReferenceId = z
+  .string()
+  .refine((value) => value === "" || z.string().uuid().safeParse(value).success, {
+    message: "Must be a UUID.",
+  })
+  .optional()
+  .nullable();
+
 export const createCampaignSchema = z
   .object({
     name: z
@@ -142,11 +188,11 @@ export const createCampaignSchema = z
     description: z.string().trim().max(CAMPAIGN_DESCRIPTION_MAX).optional().nullable(),
     campaignType: campaignTypeSchema,
     runMode: z.enum(["ONE_TIME", "RECURRING"]).optional(),
-    contactGroupId: z.string().uuid().optional().nullable(),
-    didId: z.string().uuid().optional().nullable(),
+    contactGroupId: optionalReferenceId,
+    didId: optionalReferenceId,
     contentMode: z.enum(["AUDIO", "TTS"]).optional(),
-    audioAssetId: z.string().uuid().optional().nullable(),
-    ttsTemplateId: z.string().uuid().optional().nullable(),
+    audioAssetId: optionalReferenceId,
+    ttsTemplateId: optionalReferenceId,
     schedule: scheduleConfigSchema.optional().nullable(),
     retryPolicy: retryPolicyConfigSchema.optional().nullable(),
     typeConfig: campaignTypeConfigSchema.optional().nullable(),
@@ -299,6 +345,34 @@ export const createCampaignSchema = z
 
 export type CreateCampaignValues = z.infer<typeof createCampaignSchema>;
 
+/**
+ * F5.1 ADDED — an optional reference on its way to the wire.
+ *
+ * ## Why `?? undefined` was wrong
+ *
+ * Both payload builders wrote `values.didId ?? undefined`. That is the identity
+ * for `null` and `undefined`, but an EMPTY STRING IS NOT NULLISH: `"" ?? x`
+ * returns `""`. Since the forms use `""` as the "no reference" sentinel, the
+ * builder passed `""` straight through and the request body carried
+ * `{"didId":""}` for a `UUID` field — which Jackson rejects with an
+ * `InvalidFormatException`, i.e. a 400 with a message about a malformed id
+ * rather than about the reference being cleared.
+ *
+ * ## What the backend actually expects
+ *
+ * VERIFIED `UpdateCampaignRequest`: "PUT semantics: the configuration blocks
+ * are replaced wholesale - omitting an optional block clears it", and
+ * `CampaignMapper.applyCommon` assigns the references unconditionally
+ * (`entity.setDidId(didId)`). So the wire representation of "no reference" is
+ * ABSENT, and absent deserialises to null, which clears it.
+ *
+ * Normalising here is therefore the whole fix for the wire side; the schema
+ * change is what makes the state reachable in the first place.
+ */
+function optionalReference(value: string | null | undefined): string | undefined {
+  return value === null || value === undefined || value === "" ? undefined : value;
+}
+
 export function toCreateCampaignPayload(
   values: CreateCampaignValues,
 ): CreateCampaignPayload {
@@ -307,11 +381,11 @@ export function toCreateCampaignPayload(
     description: values.description ?? undefined,
     campaignType: values.campaignType,
     runMode: values.runMode,
-    contactGroupId: values.contactGroupId ?? undefined,
-    didId: values.didId ?? undefined,
+    contactGroupId: optionalReference(values.contactGroupId),
+    didId: optionalReference(values.didId),
     contentMode: values.contentMode,
-    audioAssetId: values.audioAssetId ?? undefined,
-    ttsTemplateId: values.ttsTemplateId ?? undefined,
+    audioAssetId: optionalReference(values.audioAssetId),
+    ttsTemplateId: optionalReference(values.ttsTemplateId),
     schedule: values.schedule
       ? {
           startDate: values.schedule.startDate ?? null,
@@ -359,11 +433,11 @@ export const updateCampaignSchema = z
       .max(CAMPAIGN_NAME_MAX, `Name must be at most ${CAMPAIGN_NAME_MAX} characters.`),
     description: z.string().trim().max(CAMPAIGN_DESCRIPTION_MAX).optional().nullable(),
     runMode: z.enum(["ONE_TIME", "RECURRING"]).optional(),
-    contactGroupId: z.string().uuid().optional().nullable(),
-    didId: z.string().uuid().optional().nullable(),
+    contactGroupId: optionalReferenceId,
+    didId: optionalReferenceId,
     contentMode: z.enum(["AUDIO", "TTS"]).optional(),
-    audioAssetId: z.string().uuid().optional().nullable(),
-    ttsTemplateId: z.string().uuid().optional().nullable(),
+    audioAssetId: optionalReferenceId,
+    ttsTemplateId: optionalReferenceId,
     schedule: scheduleConfigSchema.optional().nullable(),
     retryPolicy: retryPolicyConfigSchema.optional().nullable(),
     typeConfig: campaignTypeConfigSchema.optional().nullable(),
@@ -445,11 +519,11 @@ export function toUpdateCampaignPayload(
     name: values.name,
     description: values.description ?? undefined,
     runMode: values.runMode,
-    contactGroupId: values.contactGroupId ?? undefined,
-    didId: values.didId ?? undefined,
+    contactGroupId: optionalReference(values.contactGroupId),
+    didId: optionalReference(values.didId),
     contentMode: values.contentMode,
-    audioAssetId: values.audioAssetId ?? undefined,
-    ttsTemplateId: values.ttsTemplateId ?? undefined,
+    audioAssetId: optionalReference(values.audioAssetId),
+    ttsTemplateId: optionalReference(values.ttsTemplateId),
     schedule: values.schedule
       ? {
           startDate: values.schedule.startDate ?? null,

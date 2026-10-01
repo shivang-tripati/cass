@@ -7,7 +7,15 @@ import {
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowDownIcon, ArrowUpIcon, PencilIcon, UploadIcon, DownloadIcon, Trash2Icon } from "lucide-react";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  DownloadIcon,
+  PencilIcon,
+  Trash2Icon,
+  UploadIcon,
+  UsersIcon,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +43,18 @@ interface ContactGroupTableProps {
   onImport: (group: ContactGroupResponse) => void;
   onExport: (group: ContactGroupResponse) => void;
   onDelete: (group: ContactGroupResponse) => void;
+  /**
+   * F2 capability gating.
+   *
+   * `canImport` is NOT `CONTACT_IMPORT`: that capability key exists in the
+   * catalogue and is granted to the same roles, but VERIFIED against
+   * `ContactGroupService.importContacts` the import endpoint enforces
+   * `CONTACT_MANAGE`. Gating on the un-enforced key would show a button to a
+   * role that then receives a 403 — the exact "invented permission" failure the
+   * brief forbids. The same reasoning applies to export, which is enforced on
+   * `CONTACT_VIEW`, so export is always shown and `canExport` is unused.
+   */
+  canManage: boolean;
 }
 
 function nextDirection(current: "asc" | "desc"): "asc" | "desc" {
@@ -49,6 +69,7 @@ export function ContactGroupTable({
   onImport,
   onExport,
   onDelete,
+  canManage,
 }: ContactGroupTableProps) {
   function sortableHeader(
     field: ContactGroupSortField,
@@ -59,7 +80,7 @@ export function ContactGroupTable({
       <Button
         variant="ghost"
         size="sm"
-        className="-ml-2 h-7 data-[active=true]:text-foreground"
+        className="-ml-2 h-7"
         data-active={isActive || undefined}
         onClick={() =>
           onSortChange({
@@ -103,6 +124,23 @@ export function ContactGroupTable({
         ),
     },
     {
+      // F2: `memberCount` is a VERIFIED field on ContactGroupResponse and the
+      // backend computes it in ONE grouped query for the whole page
+      // (ContactGroupService.withMemberCounts → memberCounts). It is NOT
+      // sortable — `name, createdAt, updatedAt` is the server's allowlist — so
+      // it is never sent as a sort field.
+      accessorKey: "memberCount",
+      enableSorting: false,
+      header: "Contacts",
+      cell: ({ row }) => (
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <UsersIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+          <span className="tabular-nums">{row.original.memberCount}</span>
+          <span className="sr-only">contacts in this group</span>
+        </span>
+      ),
+    },
+    {
       accessorKey: "createdAt",
       header: () => sortableHeader("createdAt", "Created"),
       cell: ({ row }) => (
@@ -114,11 +152,14 @@ export function ContactGroupTable({
     {
       accessorKey: "updatedAt",
       header: () => sortableHeader("updatedAt", "Updated"),
-      cell: ({ row }) => (
-        <span className="whitespace-nowrap text-muted-foreground">
-          {formatDateTime(row.original.updatedAt)}
-        </span>
-      ),
+      cell: ({ row }) =>
+        row.original.updatedAt ? (
+          <span className="whitespace-nowrap text-muted-foreground">
+            {formatDateTime(row.original.updatedAt)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
     },
     {
       id: "actions",
@@ -129,39 +170,56 @@ export function ContactGroupTable({
           <Button variant="ghost" size="sm" asChild>
             <Link href={`/contact-groups/${row.original.id}`}>View</Link>
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onImport(row.original)}
-          >
-            <UploadIcon aria-hidden="true" className="mr-1 h-4 w-4" />
-            Import
+          <Button variant="ghost" size="sm" asChild>
+            {/* F2: the id comes from the API record itself, so this link can
+                never contain `undefined`. F0 found the sibling contact table
+                building `/contact-groups/undefined/contacts/…`. */}
+            <Link href={`/contact-groups/${row.original.id}/contacts`}>
+              Contacts
+            </Link>
           </Button>
+          {/* VERIFIED: export is enforced on CONTACT_VIEW, which is the
+              capability required to see the list at all — so it is always
+              available to anyone who can see this row. */}
           <Button
             variant="ghost"
             size="sm"
             onClick={() => onExport(row.original)}
+            title={`Export ${row.original.name} as a file`}
           >
             <DownloadIcon aria-hidden="true" className="mr-1 h-4 w-4" />
             Export
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onEdit(row.original)}
-          >
-            <PencilIcon aria-hidden="true" className="mr-1 h-4 w-4" />
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:bg-destructive/10"
-            onClick={() => onDelete(row.original)}
-          >
-            <Trash2Icon aria-hidden="true" className="mr-1 h-4 w-4" />
-            Delete
-          </Button>
+          {canManage ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onImport(row.original)}
+              >
+                <UploadIcon aria-hidden="true" className="mr-1 h-4 w-4" />
+                Import
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onEdit(row.original)}
+              >
+                <PencilIcon aria-hidden="true" className="mr-1 h-4 w-4" />
+                Edit
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:bg-destructive/10"
+                onClick={() => onDelete(row.original)}
+                title="Delete this group"
+              >
+                <Trash2Icon aria-hidden="true" className="mr-1 h-4 w-4" />
+                Delete
+              </Button>
+            </>
+          ) : null}
         </div>
       ),
     },

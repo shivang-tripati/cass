@@ -1,0 +1,56 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase B live FreeSWITCH environment
+  mod_sofia global settings and the EXPLICIT profile list.
+
+  Why this file is replaced: the stock sofia.conf.xml loads profiles with a
+  glob include of every file in the sip_profiles directory, which pulls in
+  internal-ipv6.xml and external-ipv6.xml as well.
+
+  (The stock line is deliberately NOT quoted verbatim here: FreeSWITCH's
+  preprocessor executes pre-process include directives found anywhere in the
+  raw text, including inside XML comments, so quoting it would re-inject the
+  very glob this file exists to remove.)
+
+  Those IPv6 profiles bind ::1:5060 and ::1:5080 - the same ports this
+  environment needs - and they are not wanted at all: IPv6 SIP is out of
+  scope (there is no 5061/5081 TLS listener, no websocket binding, and no
+  IPv6 test endpoint).
+
+  Listing the two profiles explicitly makes the profile set deterministic,
+  removes two unintended listeners, and satisfies the "configure these
+  profiles explicitly" requirement rather than relying on which files happen
+  to exist in the image.
+
+  Profile -> role in the Java contract:
+    internal  softphone registration, local endpoint testing
+    external  the profile the fs-gateway trunk is bound to
+-->
+<configuration name="sofia.conf" description="OBD Phase B Sofia Endpoints">
+
+  <global_settings>
+    <param name="log-level" value="0"/>
+
+    <!--
+      No capture-server: this environment must never mirror SIP to an
+      external collector.
+    -->
+    <param name="debug-presence" value="0"/>
+  </global_settings>
+
+  <profiles>
+    <X-PRE-PROCESS cmd="include" data="../sip_profiles/internal.xml"/>
+    <X-PRE-PROCESS cmd="include" data="../sip_profiles/external.xml"/>
+  </profiles>
+
+  <!--
+    No <gateways> section here on purpose. mod_sofia resolves gateways as
+    sofia.conf -> profiles -> profile[@name] -> gateways -> gateway
+    (sofia.c: switch_xml_find_child(xprofiles, "profile", ...) then
+    switch_xml_child(xprofile, "gateways")), so the section must be a child
+    of the profile node, not of this configuration file. A <gateways> block
+    here compiles without error and is then silently ignored, which is why
+    the gateway now lives inside conf/sip_profiles/external.xml.
+  -->
+
+</configuration>

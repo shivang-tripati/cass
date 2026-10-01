@@ -24,6 +24,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { TextField } from "@/components/forms/text-field";
 import { TextareaField } from "@/components/forms/textarea-field";
 import { toApiError } from "@/lib/api/error";
+import { applyServerFieldErrors } from "@/components/auth/server-field-errors";
 import { createContactGroup, contactGroupsKeys } from "@/lib/api/contact-groups";
 import type { CreateContactGroupValues } from "@/lib/schemas/contact-group-mutation";
 import {
@@ -74,16 +75,17 @@ export function CreateContactGroupDialog({ open, onOpenChange }: CreateContactGr
 
   function applyServerError(error: unknown) {
     const apiError = toApiError(error);
-    let mapped = false;
-    for (const fieldError of apiError.fieldErrors) {
-      if (fieldError.field in createContactGroupSchema.shape) {
-        form.setError(fieldError.field as keyof CreateContactGroupValues, {
-          message: fieldError.message,
-        });
-        mapped = true;
-      }
-    }
-    if (mapped && apiError.status === 400) return;
+    // F2: the F1 shared mapper replaces a hand-rolled copy of this loop. The
+    // copy was functionally identical, which is exactly why it is dangerous —
+    // it could drift without anything noticing.
+    const mapped = applyServerFieldErrors(
+      apiError.fieldErrors,
+      Object.keys(createContactGroupSchema.shape),
+      (field, message) => {
+        form.setError(field as keyof CreateContactGroupValues, { message });
+      },
+    );
+    if (mapped > 0 && apiError.status === 400) return;
 
     setAlert(apiError.message);
   }

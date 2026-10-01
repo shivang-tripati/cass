@@ -1,9 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -17,116 +15,171 @@ import {
 } from "@/components/ui/dialog";
 import { FieldGroup } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
-import { SelectField } from "@/components/forms/select-field";
+import { QueryErrorFromApiError } from "@/components/common/query-state";
 import { toApiError } from "@/lib/api/error";
-import { campaignsKeys, changeCampaignStatus, CAMPAIGN_LEGAL_TRANSITIONS } from "@/lib/api/campaigns";
-import type { CampaignResponse } from "@/lib/api/contracts";
-import type { UpdateCampaignStatusValues } from "@/lib/schemas/campaign-mutation";
+import { changeCampaignStatus, campaignsKeys } from "@/lib/api/campaigns";
 import {
-  updateCampaignStatusSchema,
-  toUpdateCampaignStatusPayload,
-} from "@/lib/schemas/campaign-mutation";
+  CAMPAIGN_STATUS_DESCRIPTION,
+  CAMPAIGN_STATUS_LABEL,
+  CAMPAIGN_TRANSITION_CONSEQUENCE,
+  availableTransitions,
+} from "@/lib/domain/campaign-lifecycle";
+import type { CampaignResponse, CampaignStatus } from "@/lib/api/contracts";
 
+/**
+ * Campaign lifecycle transition (PATCH /api/v1/campaigns/{id}/status).
+ *
+ * ## This dialog is where the F1 lifecycle model was wrong
+ *
+ * The F1 version offered `CAMPAIGN_LEGAL_TRANSITIONS[status]` in full. That map
+ * is the backend's LEGAL set, which still contains the three edges the service
+ * refuses with 409 because the execution engine owns them:
+ *
+ * ```
+ * SCHEDULED -> RUNNING    "performed by the execution engine"
+ * RUNNING   -> COMPLETED  "performed by the execution engine"
+ * RUNNING   -> FAILED     "performed by the execution engine"
+ * ```
+ *
+ * So a user could select "Complete" or "Fail" on a running campaign and receive
+ * a 409 for an action the product states is automatic. This uses
+ * `availableTransitions`, which subtracts them, and names the target state so
+ * the control reads as an action rather than as a raw enum.
+ *
+ * ## DRAFT -> SCHEDULED is the only transition that validates
+ *
+ * VERIFIED `CampaignService.changeStatus` L289-291: only the
+ * `DRAFT -> SCHEDULED` edge runs `validateActivation`, which re-checks the
+ * schedule, contact group, DID, content approval and type configuration. Every
+ * other edge applies unconditionally. The dialog says which one is about to be
+ * validated, because for that one the failure will name a missing field rather
+ * than anything about the transition itself.
+ *
+ * ## 409 is rendered as a conflict, not as a generic failure
+ *
+ * The mutation's error goes through `QueryErrorFromApiError`, which the F1
+ * version replaced with a bare `setAlert(apiError.message)` in a branch whose
+ * two arms were identical — dead code that hid the distinction between a 409
+ * and a 400.
+ */
 interface ChangeStatusDialogProps {
   campaign: CampaignResponse | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-/**
- * Campaign status transition dialog (PATCH /api/v1/campaigns/{id}/status).
- * Only legal transitions are shown.
- */
 export function ChangeStatusDialog({
   campaign,
   open,
   onOpenChange,
 }: ChangeStatusDialogProps) {
   const queryClient = useQueryClient();
-  const [alert, setAlert] = useState<string | null>(null);
+  const [target, setTarget] = useState<CampaignStatus | null>(null);
 
-  const legalTransitions = campaign ? CAMPAIGN_LEGAL_TRANSITIONS[campaign.status] ?? [] : [];
-  const isTerminal = campaign
-    ? ["COMPLETED", "FAILED", "ARCHIVED"].includes(campaign.status)
-    : false;
+  const transitions = campaign ? availableTransitions(campaign.status) : [];
 
-  const form = useForm<UpdateCampaignStatusValues>({
-    resolver: zodResolver(updateCampaignStatusSchema),
-    defaultValues: { status: legalTransitions[0] || "SCHEDULED" },
-  });
-
-  if (!campaign || isTerminal || legalTransitions.length === 0) return null;
-
-  async function onSubmit(values: UpdateCampaignStatusValues) {
-    if (!campaign) return;
-    setAlert(null);
-    try {
-      await changeCampaignStatus(campaign.id, toUpdateCampaignStatusPayload(values));
-      toast.success("Campaign status updated", {
-        description: `Campaign moved from ${campaign.status} to ${values.status}.`,
+  const mutation = useMutation({
+    mutationFn: (status: CampaignStatus) => {
+      if (!campaign) throw new Error("No campaign selected");
+      return changeCampaignStatus(campaign.id, { status });
+    },
+    onSuccess: async (updated) => {
+      toast.success("Campaign status changed", {
+        description: `Now ${CAMPAIGN_STATUS_LABEL[updated.status].toLowerCase()}.`,
       });
+      setTarget(null);
       await queryClient.invalidateQueries({ queryKey: campaignsKeys.all });
       onOpenChange(false);
-    } catch (error) {
-      const apiError = toApiError(error);
-      if (apiError.status === 409) {
-        setAlert(apiError.message);
-      } else {
-        setAlert(apiError.message);
-      }
+    },
+  });
+
+  if (!campaign || transitions.length === 0) return null;
+
+  function close(nextOpen: boolean) {
+    if (!nextOpen) {
+      setTarget(null);
+      mutation.reset();
     }
+    onOpenChange(nextOpen);
   }
 
-  const pending = form.formState.isSubmitting;
-
-  const transitionOptions = legalTransitions.map((status) => ({
-    value: status,
-    label: status,
-  }));
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Change Campaign Status</DialogTitle>
+          <DialogTitle>Change lifecycle state</DialogTitle>
           <DialogDescription>
-            Current status: <strong>{campaign.status}</strong>. Select a valid transition.
+            {campaign.name} is currently{" "}
+            <strong>{CAMPAIGN_STATUS_LABEL[campaign.status]}</strong>.{" "}
+            {CAMPAIGN_STATUS_DESCRIPTION[campaign.status]}
           </DialogDescription>
         </DialogHeader>
 
-        {alert ? (
-          <p role="alert" className="text-sm font-medium text-destructive mb-4">
-            {alert}
-          </p>
+        {mutation.isError ? (
+          <QueryErrorFromApiError
+            apiError={toApiError(mutation.error)}
+            entityLabel="this campaign"
+            onRetry={target ? () => mutation.mutate(target) : undefined}
+          />
         ) : null}
 
-        <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (target) mutation.mutate(target);
+          }}
+          noValidate
+        >
           <FieldGroup>
-            <SelectField
-              label="New Status"
-              name="status"
-              options={transitionOptions}
-              error={form.formState.errors.status?.message}
-              control={form.control}
-            />
+            <fieldset className="flex flex-col gap-2">
+              <legend className="text-sm font-medium">
+                Choose the state to move to
+              </legend>
+              {transitions.map((status) => (
+                <label
+                  key={status}
+                  className="flex cursor-pointer items-start gap-2.5 rounded-md border p-3 text-sm hover:bg-accent"
+                >
+                  <input
+                    type="radio"
+                    name="target-status"
+                    value={status}
+                    checked={target === status}
+                    onChange={() => {
+                      setTarget(status);
+                      mutation.reset();
+                    }}
+                    className="mt-0.5 h-4 w-4 border-gray-300 text-primary focus:ring-primary"
+                  />
+                  <span className="flex flex-col gap-1">
+                    <span className="font-medium">
+                      {CAMPAIGN_STATUS_LABEL[status]}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {CAMPAIGN_TRANSITION_CONSEQUENCE[status]}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
 
             <DialogFooter className="mt-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={pending}
+                onClick={() => close(false)}
+                disabled={mutation.isPending}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={pending} variant="default">
-                {pending ? (
+              <Button type="submit" disabled={!target || mutation.isPending}>
+                {mutation.isPending ? (
                   <>
                     <Spinner aria-hidden="true" />
-                    Updating…
+                    Applying…
                   </>
                 ) : (
-                  "Change Status"
+                  "Change status"
                 )}
               </Button>
             </DialogFooter>

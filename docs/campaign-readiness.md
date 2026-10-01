@@ -781,7 +781,20 @@ Implement:
 - calling policy
 - reporting privacy
 - campaign configuration validation
+
+
 VB-6D — DTMF / IVR Configuration
+agree so let's move towards prompting agent for VB-6D is about reusable IVR (Interactive Voice Response) trees.
+In short:
+- Build a reusable IVR tree instead of hard-coding DTMF flows inside each campaign.
+- Support multi-level DTMF navigation: e.g. 1 → Sales → 2 → Support.
+- Campaign references an ivrTreeId.
+- Define nodes/prompts, valid DTMF inputs, timeouts, retries, and transitions.
+- Reuse existing audio/TTS governance.
+- Freeze the selected IVR configuration into the execution snapshot, consistent with VB-6A.
+- Integrate with the existing DTMF runtime without redesigning telephony.
+- Preserve tenant isolation and existing campaign architecture.
+Main goal: turn the current single-level DTMF campaign flow into a reusable, configurable multi-level IVR system.
 Implement:
 - valid inputs
 - input wait time
@@ -794,7 +807,9 @@ Implement:
 - transitions
 - reusable IVR selection
 - create IVR from campaign flow
-This is where the current DTMF implementation should evolve from the existing basic typeConfig/WAITING_FOR_DTMF foundation. The existing DTMF implementation deliberately stopped before IVR trees and richer interaction flows.   Pasted text(20260921-160156)
+This is where the current DTMF implementation should evolve from the existing basic typeConfig/WAITING_FOR_DTMF foundation. The existing DTMF implementation deliberately stopped before IVR trees and richer interaction flows.
+
+
 VB-6E — CONNECT_BY_AGENT campaign configuration
 Implement:
 - campaign agent assignment

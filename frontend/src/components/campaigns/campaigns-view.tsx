@@ -2,24 +2,13 @@
 
 import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  AlertTriangleIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  SearchXIcon,
-  MegaphoneIcon,
-} from "lucide-react";
+import { MegaphoneIcon, PlusIcon, SearchXIcon } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/page-header";
-import { CampaignFilterToolbar } from "@/components/common/campaign-filter-toolbar";
+import { CampaignFilterToolbar } from "@/components/campaigns/campaign-filter-toolbar";
 import { TableSkeleton } from "@/components/common/table-skeleton";
 import { TablePagination } from "@/components/common/table-pagination";
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/ui/alert";
+import { EmptyState, QueryErrorState } from "@/components/common/query-state";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,8 +17,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { CampaignResponse } from "@/lib/api/contracts";
-import { toApiError } from "@/lib/api/error";
+import type {
+  CampaignResponse,
+  CampaignRunMode,
+  CampaignStatus,
+  CampaignType,
+} from "@/lib/api/contracts";
 import {
   CAMPAIGN_SORTABLE_FIELDS,
   getCampaigns,
@@ -39,7 +32,11 @@ import {
 } from "@/lib/api/campaigns";
 import { CreateCampaignDialog } from "@/components/campaigns/create-campaign-dialog";
 import { EditCampaignDialog } from "@/components/campaigns/edit-campaign-dialog";
+import { CloneCampaignDialog } from "@/components/campaigns/clone-campaign-dialog";
+import { ChangeStatusDialog } from "@/components/campaigns/change-status-dialog";
 import { CampaignTable } from "@/components/campaigns/campaign-table";
+import { canPerformCampaignAction, canCreateCampaign } from "@/lib/auth/campaign-gates";
+import { useCan } from "@/lib/auth/use-can";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useUrlListState } from "@/hooks/use-url-list-state";
 
@@ -58,17 +55,26 @@ export function CampaignsView() {
   // Typing commits to the URL instantly; only fetching is debounced.
   const debouncedSearch = useDebouncedValue(state.q, SEARCH_DEBOUNCE_MS);
 
-  // Additional filters are kept in local state (not in URL) because they use
-  // Campaign-specific enums that differ from the shared LifecycleStatus.
-  const [campaignStatus, setCampaignStatus] = useState<
-    import("@/lib/api/contracts").CampaignStatus | ""
-  >("");
-  const [campaignType, setCampaignType] = useState<
-    import("@/lib/api/contracts").CampaignType | ""
-  >("");
-  const [runMode, setRunMode] = useState<
-    import("@/lib/api/contracts").CampaignRunMode | ""
-  >("");
+  /**
+   * F4: the campaign-status, campaign-type and run-mode filters live in
+   * component state rather than the URL, because `useUrlListState`'s `status`
+   * slot is hard-coded to the users domain's `ACTIVE | SUSPENDED` and its
+   * `patch` writes that slot back out. F3 recorded the same limitation for
+   * audio and TTS.
+   *
+   * The change made here is the part that was a real bug: F1 reset to page 1
+   * for the search box but NOT for these three, so changing a filter while
+   * sitting on page 3 left the view on page 3 of a smaller result set — often
+   * an empty one. `patchUrl(..., true)` now returns to the first page whenever
+   * any filter changes.
+   *
+   * The shared hook is deliberately NOT redesigned: doing so is a cross-domain
+   * change touching users, tenants, resellers, DIDs, contacts, contact groups,
+   * audio and TTS, and it is not required to make Campaign correct.
+   */
+  const [campaignStatus, setCampaignStatus] = useState<CampaignStatus | "">("");
+  const [campaignType, setCampaignType] = useState<CampaignType | "">("");
+  const [runMode, setRunMode] = useState<CampaignRunMode | "">("");
 
   const apiParams: CampaignListParams = {
     page: state.page,
@@ -91,12 +97,17 @@ export function CampaignsView() {
   // Dialog state is intentionally local (not in the URL).
   const [editingCampaign, setEditingCampaign] = useState<CampaignResponse | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [cloningCampaign, setCloningCampaign] = useState<CampaignResponse | null>(null);
+  const [statusCampaign, setStatusCampaign] = useState<CampaignResponse | null>(null);
+  const { user } = useCan();
 
-  const filtersActive =
-    state.q !== "" ||
-    campaignStatus !== "" ||
-    campaignType !== "" ||
-    runMode !== "";
+  // VERIFIED `CampaignService.create` requires `CAMPAIGN_MANAGE` AND a resolvable
+  // target tenant; see `campaign-gates.ts` for why the capability alone is not
+  // sufficient.
+  const mayCreate = canCreateCampaign(user);
+  const mayWrite = canPerformCampaignAction(user, "write");
+  const mayExecute = canPerformCampaignAction(user, "execute");
+
   const clearFilters = useCallback(() => {
     patchUrl({ q: "" }, true);
     setCampaignStatus("");
@@ -104,26 +115,32 @@ export function CampaignsView() {
     setRunMode("");
   }, [patchUrl]);
 
-  const apiError = listQuery.error ? toApiError(listQuery.error) : null;
   const pagination = listQuery.data?.pagination;
+  const filtersActive =
+    state.q !== "" || campaignStatus !== "" || campaignType !== "" || runMode !== "";
 
   return (
     <div className="mx-auto w-full max-w-7xl">
       <PageHeader
         title="Campaigns"
-        description="Manage outbound campaigns within your authorized organization scope."
+        description="Outbound campaigns within your authorized organization scope."
       >
-        <Button onClick={() => setCreateOpen(true)}>
-          <PlusIcon aria-hidden="true" />
-          Create Campaign
-        </Button>
+        {mayCreate ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <PlusIcon aria-hidden="true" />
+            Create campaign
+          </Button>
+        ) : null}
       </PageHeader>
 
       <Card>
         <CardHeader>
           <CardTitle>Campaigns</CardTitle>
           <CardDescription>
-            Outbound campaign configurations scoped to your organizational boundary.
+            VERIFIED scoping: a tenant caller sees its own campaigns, a reseller
+            caller sees its own hierarchy&apos;s ACTIVE tenants, and a platform
+            caller sees every non-deleted campaign. A campaign outside that
+            boundary is reported as not found rather than forbidden.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -135,71 +152,52 @@ export function CampaignsView() {
             runMode={runMode}
             onSearchInput={(search) => patchUrl({ q: search }, true)}
             onSearchClear={() => patchUrl({ q: "" }, true)}
-            onStatusChange={(status) => setCampaignStatus(status)}
-            onCampaignTypeChange={(campaignType) => setCampaignType(campaignType)}
-            onRunModeChange={(runMode) => setRunMode(runMode)}
+            onStatusChange={(status) => {
+              setCampaignStatus(status);
+              patchUrl({}, true);
+            }}
+            onCampaignTypeChange={(next) => {
+              setCampaignType(next);
+              patchUrl({}, true);
+            }}
+            onRunModeChange={(next) => {
+              setRunMode(next);
+              patchUrl({}, true);
+            }}
             searchPlaceholder="Search name, description…"
           />
 
-          {apiError ? (
-            <Alert variant="destructive">
-              <AlertTriangleIcon aria-hidden="true" />
-              <AlertTitle>
-                {apiError.status === 403
-                  ? "You don't have permission to view campaigns."
-                  : apiError.message}
-              </AlertTitle>
-              <AlertDescription>
-                {apiError.status === 403
-                  ? "Ask a platform administrator for access."
-                  : apiError.requestId
-                    ? `Request ID: ${apiError.requestId}`
-                    : null}
-              </AlertDescription>
-              <AlertAction>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void listQuery.refetch()}
-                >
-                  <RefreshCwIcon aria-hidden="true" />
-                  Retry
-                </Button>
-              </AlertAction>
-            </Alert>
+          {listQuery.isError ? (
+            <QueryErrorState
+              error={listQuery.error}
+              entityLabel="campaigns"
+              onRetry={() => void listQuery.refetch()}
+            />
           ) : null}
 
           {listQuery.isPending ? (
             <TableSkeleton columns={7} rows={Math.min(state.size, 8)} />
           ) : listQuery.data && listQuery.data.items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-6 py-14 text-center">
-              {filtersActive ? (
-                <SearchXIcon
-                  aria-hidden="true"
-                  className="size-8 text-muted-foreground"
-                />
-              ) : (
-                <MegaphoneIcon
-                  aria-hidden="true"
-                  className="size-8 text-muted-foreground"
-                />
-              )}
-              <p className="text-sm font-medium">
-                {filtersActive
+            <EmptyState
+              icon={filtersActive ? SearchXIcon : MegaphoneIcon}
+              title={
+                filtersActive
                   ? "No campaigns match your filters"
-                  : "No campaigns yet"}
-              </p>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                {filtersActive
-                  ? "Try adjusting or clearing the search and status filters."
-                  : "Campaigns will appear here once they are created in your organization."}
-              </p>
-              {filtersActive ? (
-                <Button variant="outline" size="sm" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              ) : null}
-            </div>
+                  : "No campaigns yet"
+              }
+              description={
+                filtersActive
+                  ? "Try adjusting or clearing the search and filters."
+                  : "A campaign is created as a draft, configured, and then scheduled."
+              }
+              action={
+                filtersActive ? (
+                  <Button variant="outline" size="sm" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : listQuery.data ? (
             <>
               <div
@@ -211,14 +209,10 @@ export function CampaignsView() {
                   sort={state.sort}
                   onSortChange={(sort) => patchUrl({ sort }, false)}
                   onEdit={setEditingCampaign}
-                  onClone={() => {
-                    // TODO: Implement clone via API
-                    window.location.reload();
-                  }}
-                  onStatusChange={() => {
-                    // TODO: Implement status change dialog
-                    window.location.reload();
-                  }}
+                  onClone={setCloningCampaign}
+                  onStatusChange={setStatusCampaign}
+                  canManage={mayWrite}
+                  canExecute={mayExecute}
                 />
               </div>
               {pagination ? (
@@ -241,8 +235,31 @@ export function CampaignsView() {
         <EditCampaignDialog
           key={editingCampaign.id}
           campaign={editingCampaign}
+          open
           onOpenChange={(open) => {
             if (!open) setEditingCampaign(null);
+          }}
+        />
+      ) : null}
+
+      {cloningCampaign ? (
+        <CloneCampaignDialog
+          key={cloningCampaign.id}
+          campaign={cloningCampaign}
+          open
+          onOpenChange={(open) => {
+            if (!open) setCloningCampaign(null);
+          }}
+        />
+      ) : null}
+
+      {statusCampaign ? (
+        <ChangeStatusDialog
+          key={statusCampaign.id}
+          campaign={statusCampaign}
+          open
+          onOpenChange={(open) => {
+            if (!open) setStatusCampaign(null);
           }}
         />
       ) : null}

@@ -20,6 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { TextField } from "@/components/forms/text-field";
 import { TextareaField } from "@/components/forms/textarea-field";
 import { toApiError } from "@/lib/api/error";
+import { applyServerFieldErrors } from "@/components/auth/server-field-errors";
 import type { ContactGroupResponse } from "@/lib/api/contracts";
 import { contactGroupsKeys, updateContactGroup } from "@/lib/api/contact-groups";
 import type { UpdateContactGroupValues } from "@/lib/schemas/contact-group-mutation";
@@ -51,24 +52,33 @@ export function EditContactGroupDialog({ group, onOpenChange }: EditContactGroup
     if (!group) return;
     setAlert(null);
     try {
-      await updateContactGroup(group.id, toUpdateContactGroupPayload(values));
+      const updated = await updateContactGroup(group.id, toUpdateContactGroupPayload(values));
       toast.success("Contact group updated", {
-        description: `${group.name} was saved.`,
+        description: `${updated.name} was saved.`,
       });
+      // The list AND any open detail view show the new name/description.
       await queryClient.invalidateQueries({ queryKey: contactGroupsKeys.all });
       onOpenChange(false);
     } catch (error) {
-      const apiError = toApiError(error);
-      for (const fieldError of apiError.fieldErrors) {
-        if (fieldError.field in updateContactGroupSchema.shape) {
-          form.setError(fieldError.field as keyof UpdateContactGroupValues, {
-            message: fieldError.message,
-          });
-          return;
-        }
-      }
-      setAlert(apiError.message);
+      applyServerError(error);
     }
+  }
+
+  function applyServerError(error: unknown) {
+    const apiError = toApiError(error);
+    // F2: shared mapper. The previous handler `return`ed after the FIRST mapped
+    // field error regardless of status, so a single message suppressed the form
+    // summary even when the failure was not a field-level 400.
+    const mapped = applyServerFieldErrors(
+      apiError.fieldErrors,
+      Object.keys(updateContactGroupSchema.shape),
+      (field, message) => {
+        form.setError(field as keyof UpdateContactGroupValues, { message });
+      },
+    );
+    if (mapped > 0 && apiError.status === 400) return;
+
+    setAlert(apiError.message);
   }
 
   const pending = form.formState.isSubmitting;

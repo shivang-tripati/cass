@@ -24,6 +24,7 @@ import { signupTenant } from "@/lib/api/signup";
 import type { TenantSignupValues } from "@/lib/schemas/signup";
 import { tenantSignupSchema } from "@/lib/schemas/signup";
 import { toSignupFormFieldKey } from "@/components/auth/signup-error-mapping";
+import { applyServerFieldErrors } from "@/components/auth/server-field-errors";
 
 interface FormAlert {
   title: string;
@@ -69,17 +70,17 @@ export function TenantSignupForm() {
 
   function applyServerError(error: unknown) {
     const apiError = toApiError(error);
-    let mapped = false;
-    for (const fieldError of apiError.fieldErrors) {
-      const key = toSignupFormFieldKey(fieldError.field);
-      if (key in tenantSignupSchema.shape) {
-        form.setError(key as keyof TenantSignupValues, {
-          message: fieldError.message,
-        });
-        mapped = true;
-      }
-    }
-    if (mapped && apiError.status === 400) return;
+    // F1: shared mapping, which also DROPS a field this form does not declare
+    // instead of attaching the message to an arbitrary control.
+    const mapped = applyServerFieldErrors(
+      apiError.fieldErrors,
+      Object.keys(tenantSignupSchema.shape),
+      (field, message) => {
+        form.setError(field as keyof TenantSignupValues, { message });
+      },
+      toSignupFormFieldKey,
+    );
+    if (mapped > 0 && apiError.status === 400) return;
 
     setAlert({ title: apiError.message });
   }

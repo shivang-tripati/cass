@@ -4,7 +4,7 @@ import type {
   TenantResponse,
   UpdateTenantPayload,
 } from "@/lib/api/contracts";
-import { unwrap } from "@/lib/api/auth";
+import { sendVoid, unwrap } from "@/lib/api/transport";
 import type {
   ApiResponse,
   LifecycleStatus,
@@ -106,6 +106,6 @@ export function createTenant(
  * Soft-deletes a tenant. Returns bare 204 (no envelope), so the request is
  * awaited without unwrapping.
  */
-export async function deleteTenant(tenantId: string): Promise<void> {
-  await api.delete(`/tenants/${tenantId}`);
+export function deleteTenant(tenantId: string): Promise<void> {
+  return sendVoid(api.delete(`/tenants/${tenantId}`));
 }

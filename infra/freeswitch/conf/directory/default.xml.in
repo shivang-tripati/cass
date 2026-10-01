@@ -1,0 +1,113 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase C: THE directory. Replaces the image's stock default.xml.
+
+  TEMPLATE - rendered at container start by infra/freeswitch/scripts/entrypoint.sh,
+  which substitutes the two SIP password placeholders from the environment. No
+  SIP credential is ever committed.
+
+  This file exists as a single, owned directory because three separate defects
+  were found by observation, all of them caused by the stock directory or by
+  adding a second directory file beside it. See 13-TROUBLESHOOTING.md.
+
+  1. THE STOCK USERS MUST GO.
+     The stock file defines users 1000-1014 whose password is the publicly known
+     value in vars.xml. Phase C had to enable auth-subscriptions to observe
+     REGISTER / 401 / digest / 200 OK, so leaving them in place would have
+     accepted a REGISTER for a stock user with a known password. Registration
+     being enabled is only safe because this file removed them. Verified:
+     a REGISTER for user 1000 with the stock password is answered 403.
+
+  2. EXTENSION NUMBERS COLLIDE WITH THE STOCK DIRECTORY.
+     The stock file also defines a user called 1001, in the same domain. With
+     both files present the directory lookup finds the STOCK 1001, so a
+     REGISTER for the test extension 1001 carrying the CORRECT password was
+     answered:
+
+         SIP/2.0 403 Forbidden
+
+     and the test endpoint's gateway logged:
+
+         sofia_reg.c:2661 platform-switch Failed Registration with status
+         Forbidden [403]. failure #1
+
+     Diagnostic worth keeping: a 403 on the authenticated retry does not mean
+     "wrong password". Here it did not even mean "wrong user" - it meant the
+     right user id was defined twice and the wrong definition won. Extension
+     numbers are a shared namespace with whatever the image ships.
+
+  3. THE dial-string PARAM IS NOT OPTIONAL.
+     An earlier version of this file defined the two users but omitted the
+     domain's dial-string parameter. Registration then worked, the endpoint
+     registered, and a call to user/1002 produced a channel and an answered
+     peer - but NO media, because the bridge never happened. FreeSWITCH said why,
+     in the log, for the channel that tried to bridge:
+
+         [ERR] mod_dptools.c:4419 No dial-string available, please check your
+         user directory.
+
+     user/<ext> is resolved through the directory's dial-string parameter. With
+     it missing, the bridge target cannot be built, so the two legs are never
+     connected: signalling looks completely healthy, and audio silently does
+     not flow. That is the single most misleading failure mode in this whole
+     phase, and it is invisible unless media is actually checked.
+
+  WHY ONE FILE, NOT TWO
+  Two files each declaring a domain with the same name is legal, and the
+  directory then searches all of them - which is exactly what made defect 2 so
+  hard to see. One file, one domain, two users: nothing to collide with.
+
+  WHY THE USERS EXIST AT ALL
+  Phase B deliberately disabled SIP registration, because the stock directory
+  ships a publicly known default password and accepting a well-known credential
+  is worse than accepting none. Phase C needs the registration flow observed, so
+  registration is enabled - but only together with this file, which is the other
+  half of that decision.
+
+  SCOPE: these are DEVELOPMENT test identities. They are not production
+  extensions, they have no DND or presence behaviour, and they must never be
+  pointed at a real carrier.
+
+  EDITING RULE (from Phase B, 13-TROUBLESHOOTING.md entry 1): a substitution
+  token must never appear in a COMMENT - the renderer replaces every
+  occurrence, so a token in prose would be replaced too and would write the
+  live credential into the rendered file. The tokens below appear only in
+  "password" and "vm-password" parameters, which is intentional.
+-->
+<domain name="$${domain}">
+
+  <params>
+    <!-- REQUIRED for user/<ext> to resolve. Without it a call to an extension
+         produces a channel and an answered peer but never bridges, so there is
+         no media and no DTMF. See the note at the top. -->
+    <param name="dial-string" value="{$presence_id}${dialed_user}@{$dialed_domain}"/>
+  </params>
+
+  <groups>
+    <group name="default">
+      <users>
+        <user id="1001">
+          <param name="password" value="@@SIP_1001_PASSWORD@@"/>
+          <param name="vm-password" value="@@SIP_1001_PASSWORD@@"/>
+          <variables>
+            <variable name="accountcode" value="1001"/>
+            <variable name="user_context" value="default"/>
+            <variable name="effective_caller_id_name" value="Ext 1001"/>
+            <variable name="effective_caller_id_number" value="1001"/>
+          </variables>
+        </user>
+        <user id="1002">
+          <param name="password" value="@@SIP_1002_PASSWORD@@"/>
+          <param name="vm-password" value="@@SIP_1002_PASSWORD@@"/>
+          <variables>
+            <variable name="accountcode" value="1002"/>
+            <variable name="user_context" value="default"/>
+            <variable name="effective_caller_id_name" value="Ext 1002"/>
+            <variable name="effective_caller_id_number" value="1002"/>
+          </variables>
+        </user>
+      </users>
+    </group>
+  </groups>
+
+</domain>

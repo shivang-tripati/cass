@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase C: which SIP profile(s) this endpoint loads.
+
+  This REPLACES the image's stock sofia.conf.xml, which includes the stock
+  internal.xml, external.xml and the stock IPv6 profiles. Replacing the list
+  rather than editing one file is deliberate: the endpoint must present exactly
+  one predictable profile, so a packet trace cannot be confused by a second
+  profile answering on the same port. See 13-TROUBLESHOOTING.md for why the
+  stock profiles are a problem in the first place.
+
+  THE ROOT ELEMENT MUST BE <configuration>, NOT <config>.
+  Observed in Phase C: with <config name="sofia.conf">, mod_sofia failed to
+  open its own configuration and switched itself off:
+
+      [ERR] sofia.c:4494 Open of sofia.conf failed
+
+  and the endpoint then listened on NO SIP port at all - so the platform switch
+  saw no registration and no call could ever be placed. The failure is silent
+  in the sense that FreeSWITCH still starts and still looks "up"; only a port
+  check or a packet trace reveals it. mod_sofia locates its settings by looking
+  for a child element literally named "configuration" with name="sofia.conf",
+  so <config> is simply not found. The same rule applies to mod_event_socket.
+
+  The profile file itself is a template rendered at container start, so it is
+  not mounted directly into sip_profiles/ - the rendered target has to be
+  writable.
+-->
+<configuration name="sofia.conf" description="OBD Phase C Sofia endpoint">
+
+  <global_settings>
+    <param name="log-level" value="0"/>
+
+    <!-- This environment must never mirror SIP to an external collector. -->
+    <param name="debug-presence" value="0"/>
+  </global_settings>
+
+  <profiles>
+    <X-PRE-PROCESS cmd="include" data="../sip_profiles/obd-endpoint.xml"/>
+  </profiles>
+
+  <!--
+    No <gateways> section here on purpose. mod_sofia resolves gateways as
+    sofia.conf -> profiles -> profile[@name] -> gateways -> gateway, so the
+    gateway must be a child of the profile node. A <gateways> block at this
+    level compiles without error and is then silently ignored - which is
+    exactly how a test endpoint can appear to start perfectly and yet never
+    register.
+  -->
+
+</configuration>

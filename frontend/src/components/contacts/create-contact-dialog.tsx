@@ -24,42 +24,59 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { TextField } from "@/components/forms/text-field";
 import { TextareaField } from "@/components/forms/textarea-field";
-import { toApiError } from "@/lib/api/error";
+import { isConflict, toApiError } from "@/lib/api/error";
 import { createContact, contactsKeys } from "@/lib/api/contacts";
-import type { CreateContactValues } from "@/lib/schemas/contact-mutation";
+import { applyServerFieldErrors } from "@/components/auth/server-field-errors";
 import {
+  CONTACT_E164_HINT,
   createContactSchema,
   toCreateContactPayload,
+  type CreateContactFormValues,
+  type CreateContactValues,
 } from "@/lib/schemas/contact-mutation";
-import type { Path } from "react-hook-form";
 
-const EMPTY_VALUES: CreateContactValues = {
+const EMPTY_VALUES: CreateContactFormValues = {
   firstName: "",
   lastName: "",
   phoneNumber: "",
   email: "",
-  attributes: undefined,
+  attributes: "",
 };
 
 interface CreateContactDialogProps {
   contactGroupId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Invalidates the group list so `memberCount` refreshes. */
+  onCreated?: () => void | Promise<void>;
 }
 
-/** Returns the error message for a field, if any. */
-function getError<T extends Record<string, unknown>>(
-  form: ReturnType<typeof useForm<T>>,
-  name: Path<T>,
-): string | undefined {
-  return form.getFieldState(name).error?.message;
-}
-
-export function CreateContactDialog({ contactGroupId, open, onOpenChange }: CreateContactDialogProps) {
+/**
+ * Create a contact in a group.
+ *
+ * F2: the form now holds a JSON *string* for `attributes` and the schema parses
+ * it into the object the API takes (see `contact-mutation.ts`). Previously a
+ * textarea string was bound to a `z.record` schema, so the field could never
+ * validate.
+ *
+ * The dialog explains the VERIFIED find-or-create behaviour, because "Add
+ * Contact" on a number that already exists in the tenant does NOT create a
+ * duplicate and does not error — it attaches the existing contact to this group.
+ */
+export function CreateContactDialog({
+  contactGroupId,
+  open,
+  onOpenChange,
+  onCreated,
+}: CreateContactDialogProps) {
   const queryClient = useQueryClient();
   const [alert, setAlert] = useState<string | null>(null);
 
-  const form = useForm<CreateContactValues>({
+  const form = useForm<CreateContactFormValues, unknown, CreateContactValues>({
+    // The schema TRANSFORMS `attributes` from a JSON string into the object the
+    // API takes, so the form's field type and its submitted type differ. React
+    // Hook Form models that with the third `useForm` generic; without it the
+    // resolver's output type does not line up with the declared field type.
     resolver: zodResolver(createContactSchema),
     defaultValues: EMPTY_VALUES,
   });
@@ -75,11 +92,23 @@ export function CreateContactDialog({ contactGroupId, open, onOpenChange }: Crea
   async function onSubmit(values: CreateContactValues) {
     setAlert(null);
     try {
-      const contact = await createContact(contactGroupId, toCreateContactPayload(values));
-      toast.success("Contact created", {
-        description: `${contact.firstName ?? contact.phoneNumber} was added.`,
+      // F2: invalidate EVERY list of this group's contacts, not one hardcoded
+      // page/sort. The previous call reconstructed a single exact query key, so
+      // a create performed while a different page or search was active left the
+      // visible list stale.
+      const contact = await createContact(
+        contactGroupId,
+        toCreateContactPayload(values),
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: contactsKeys.forGroup(contactGroupId),
+        }),
+        onCreated?.(),
+      ]);
+      toast.success("Contact added", {
+        description: `${contact.firstName ?? contact.lastName ?? contact.phoneNumber} is now in this group.`,
       });
-      await queryClient.invalidateQueries({ queryKey: contactsKeys.list({ contactGroupId, page: 0, size: 20, sortField: "firstName", sortDirection: "asc" }) });
       handleOpenChange(false);
     } catch (error) {
       applyServerError(error);
@@ -88,18 +117,25 @@ export function CreateContactDialog({ contactGroupId, open, onOpenChange }: Crea
 
   function applyServerError(error: unknown) {
     const apiError = toApiError(error);
-    let mapped = false;
-    for (const fieldError of apiError.fieldErrors) {
-      if (fieldError.field in createContactSchema.shape) {
-        form.setError(fieldError.field as keyof CreateContactValues, {
-          message: fieldError.message,
-        });
-        mapped = true;
-      }
-    }
-    if (mapped && apiError.status === 400) return;
+    // F1 shared mapping: drops a field this form does not declare rather than
+    // attaching the message to an arbitrary control.
+    const mapped = applyServerFieldErrors(
+      apiError.fieldErrors,
+      Object.keys(createContactSchema.shape),
+      (field, message) => {
+        form.setError(field as keyof CreateContactFormValues, { message });
+      },
+    );
+    if (mapped > 0 && apiError.status === 400) return;
 
-    setAlert(apiError.message);
+    // VERIFIED: a 409 here is a concurrent create of the same tenant+phone
+    // (ContactIdentityService.duplicateContactConflict), never a plain
+    // duplicate — an existing number is normally reused silently.
+    setAlert(
+      isConflict(apiError)
+        ? `${apiError.message} It may have just been added by someone else — refresh to see it.`
+        : apiError.message,
+    );
   }
 
   const pending = form.formState.isSubmitting;
@@ -110,7 +146,9 @@ export function CreateContactDialog({ contactGroupId, open, onOpenChange }: Crea
         <DialogHeader>
           <DialogTitle>Add Contact</DialogTitle>
           <DialogDescription>
-            Add a new contact to this group. Phone number must be a valid E.164 number.
+            Contacts are identified by phone number within your organization. If
+            this number already exists, the existing contact is added to this
+            group rather than duplicated.
           </DialogDescription>
         </DialogHeader>
 
@@ -128,40 +166,41 @@ export function CreateContactDialog({ contactGroupId, open, onOpenChange }: Crea
                 label="First Name"
                 placeholder="John"
                 registration={form.register("firstName")}
-                error={getError(form, "firstName")}
+                error={form.getFieldState("firstName").error?.message}
               />
               <TextField
                 label="Last Name"
                 placeholder="Doe"
                 registration={form.register("lastName")}
-                error={getError(form, "lastName")}
+                error={form.getFieldState("lastName").error?.message}
               />
               <TextField
-                label="Phone Number (E.164)"
+                label="Phone Number"
                 placeholder="+918012345678"
-                description="Must be a valid E.164 number with leading +"
+                description={CONTACT_E164_HINT}
                 registration={form.register("phoneNumber")}
-                error={getError(form, "phoneNumber")}
+                error={form.getFieldState("phoneNumber").error?.message}
               />
               <TextField
                 label="Email"
                 type="email"
                 placeholder="john.doe@example.com"
                 registration={form.register("email")}
-                error={getError(form, "email")}
+                error={form.getFieldState("email").error?.message}
               />
             </FieldSet>
 
             <FieldSet>
               <FieldLegend>Attributes (Optional)</FieldLegend>
               <FieldDescription>
-                JSON object for custom attributes. Leave empty if not needed.
+                A JSON object for your own reference data. It is stored as-is and
+                is not interpreted by the platform.
               </FieldDescription>
               <TextareaField
                 label="Attributes (JSON)"
-                placeholder='{"key": "value"}'
+                placeholder={'{\n  "city": "Pune"\n}'}
                 registration={form.register("attributes")}
-                error={getError(form, "attributes")}
+                error={form.getFieldState("attributes").error?.message}
                 rows={4}
               />
             </FieldSet>
@@ -179,7 +218,7 @@ export function CreateContactDialog({ contactGroupId, open, onOpenChange }: Crea
                 {pending ? (
                   <>
                     <Spinner aria-hidden="true" />
-                    Creating…
+                    Adding…
                   </>
                 ) : (
                   "Add Contact"

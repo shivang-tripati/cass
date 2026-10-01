@@ -1,10 +1,15 @@
 import { api } from "@/lib/api/client";
 import type {
+  AllocationState,
+  AssignDidPayload,
+  AssignDidResponse,
   CreateDidPayload,
   DidResponse,
+  DidStatus,
+  NumberType,
   UpdateDidPayload,
 } from "@/lib/api/contracts";
-import { unwrap } from "@/lib/api/auth";
+import { sendVoid, unwrap } from "@/lib/api/transport";
 import type {
   ApiResponse,
   PaginationMetadata,
@@ -117,18 +122,40 @@ export function updateDid(
 }
 
 /** Soft-deletes a DID. Bare 204 — no envelope to unwrap. */
-export async function deleteDid(didId: string): Promise<void> {
-  await api.delete(`/dids/${didId}`);
+export function deleteDid(didId: string): Promise<void> {
+  return sendVoid(api.delete(`/dids/${didId}`));
 }
 
-/** com.shivang.obd.did.DidStatus */
-export type DidStatus = "ACTIVE" | "INACTIVE";
+/**
+ * POST /api/v1/dids/{id}/assign — allocate an unassigned DID to a reseller or a
+ * tenant. VERIFIED against DidController.assign (L138) and DidService:
+ *  - the body is `AssignDidRequest{ targetId }`, a single required UUID. The
+ *    service resolves it as a reseller first and then as a tenant, so this one
+ *    field carries either kind of id. That is the backend's contract, not an
+ *    ambiguity the client is free to resolve.
+ *  - capability is DID_MANAGE and the boundary depends on the CALLER: platform
+ *    callers get `platformWide()`, reseller callers get `forReseller(id)`.
+ *  - a TENANT caller is rejected with 400 "Tenants cannot assign or transfer
+ *    DID inventory." (DidService L230-232) — 400, not 403. The UI must not
+ *    offer this action to a tenant user.
+ *
+ * F1: this endpoint had no client at all. The contract is now expressed; the
+ * dialog to drive it is out of F1 scope.
+ */
+export function assignDid(
+  didId: string,
+  payload: AssignDidPayload,
+): Promise<AssignDidResponse> {
+  return unwrap(
+    api.post<ApiResponse<AssignDidResponse>>(`/dids/${didId}/assign`, payload),
+  );
+}
 
-/** com.shivang.obd.did.AllocationState */
-export type AllocationState = "AVAILABLE" | "ASSIGNED";
-
-/** com.shivang.obd.did.NumberType */
-export type NumberType = "LANDLINE" | "MOBILE" | "PROMOTIONAL_140";
-
-/** com.shivang.obd.did.DidCapability */
-export type DidCapability = "VOICE_OUTBOUND";
+/** POST /api/v1/dids/{id}/revoke — return an allocated DID to the unassigned
+ * pool. VERIFIED against DidController.revoke (L157). Same capability and caller
+ * rules as `assignDid`; a tenant caller gets 400, not 403. */
+export function revokeDid(didId: string): Promise<AssignDidResponse> {
+  return unwrap(
+    api.post<ApiResponse<AssignDidResponse>>(`/dids/${didId}/revoke`),
+  );
+}

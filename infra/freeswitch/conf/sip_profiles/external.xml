@@ -1,0 +1,101 @@
+<?xml version="1.0"?>
+<!--
+  OBD Platform - Phase B live FreeSWITCH environment
+  Sofia "external" SIP profile.
+
+  Role in the Java contract: this is the profile the "fs-gateway" trunk is
+  bound to. The Java platform originates with
+  sofia/gateway/fs-gateway/<destination>, so FreeSWITCH resolves the
+  gateway's own sofia-profile setting to decide which listener the leg
+  uses - the "profile" field in the platform's configuration
+  (telephony.freeswitch.profile) is stored but NOT interpolated into the
+  dial string, and is therefore inert for origination.
+
+  Delivered on 5080 (stock FreeSWITCH convention for the external profile).
+
+  Deliberate omissions and why:
+    - No sip-ip / rtp-ip, same reasoning as the internal profile: bind the
+      listener everywhere, auto-detect a real address for SDP.
+    - All TLS parameters omitted, so 5081 is NOT bound.
+    - No presence, no SRTP.
+-->
+<!--
+  Root element note: a sofia profile file must have <profile name="..."> as
+  its root element, exactly as the stock sip_profiles/*.xml files do. A
+  <configuration name="sofia.conf"> root is silently ignored by mod_sofia -
+  the profile is compiled into the configuration but never instantiated.
+-->
+<profile name="external">
+
+  <settings>
+    <param name="debug" value="0"/>
+    <param name="sip-trace" value="no"/>
+    <param name="sip-capture" value="no"/>
+
+    <param name="sip-port" value="5080"/>
+    <param name="dialplan" value="XML"/>
+    <param name="context" value="public"/>
+
+    <!-- === Codecs === -->
+    <param name="inbound-codec-prefs" value="PCMU,PCMA,G722,OPUS"/>
+    <param name="outbound-codec-prefs" value="PCMU,PCMA,G722,OPUS"/>
+    <param name="rfc2833-pt" value="101"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+
+    <!-- === DTMF: same policy as the internal profile === -->
+    <param name="liberal-dtmf" value="true"/>
+    <param name="proxy-info" value="true"/>
+    <param name="dtmf-duration" value="2000"/>
+
+    <!--
+      auth-calls=false is the stock external-profile behaviour: the
+      external profile terminates provider trunks, it does not authenticate
+      local subscribers.
+    -->
+    <param name="auth-calls" value="false"/>
+    <param name="manage-presence" value="false"/>
+
+    <!-- === Security: private development network only === -->
+    <param name="local-network-acl" value="obd-dev-acl"/>
+
+    <!-- === Media ===
+         See the note in internal.xml: rtp-timeout-sec and
+         rtp-hold-timeout-sec are deprecated in 1.11 and intentionally
+         omitted; the compiled defaults match the stock values. -->
+    <param name="rtp-timer-name" value="soft"/>
+    <param name="inbound-late-negotiation" value="true"/>
+    <param name="hold-music" value="$${hold_music}"/>
+  </settings>
+
+  <!--
+    GATEWAYS on this profile.
+
+    mod_sofia resolves gateways as:
+        sofia.conf -> profiles -> profile[@name] -> gateways -> gateway
+    so a <gateways> block placed in sofia.conf.xml instead compiles cleanly and
+    is then silently ignored. Each gateway is therefore declared here, as a
+    child of the profile node, and the profile that DECLARES a gateway is the
+    profile it originates from.
+
+    The include path is relative to this file's own directory
+    (/etc/freeswitch/sip_profiles), so "../gateway/<name>.xml" is the
+    bind-mounted gateway directory at the configuration root.
+
+    ONE trunk only: fs-gateway, the carrier-facing trunk for the future real
+    provider. It proxies freeswitch-provider:5080, which does not resolve yet,
+    so it is currently unroutable BY DESIGN - there is no carrier. Untouched by
+    Phase E.
+
+    The Phase E local test gateway (local-endpoint-1002) is NOT here. It was
+    declared on this profile first, and did not route: the declaring profile
+    determines the origination profile, so the leg originated on external,
+    whose registration database (sofia_reg_external) does not contain the test
+    endpoint, and every attempt ended in NO_ROUTE_DESTINATION. The endpoint
+    registers to the internal profile, so its gateway is declared in
+    internal.xml. See ADR-007.
+  -->
+  <gateways>
+    <X-PRE-PROCESS cmd="include" data="../gateway/fs-gateway.xml"/>
+  </gateways>
+
+</profile>
